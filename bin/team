@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# team new <proj> | assign <proj> <role> "<task>" | wait <id> | ls | close <proj> [role]
+# Workers are omp instances in tmux windows named omp-<proj>-<role> (visible in your session).
+set -euo pipefail
+ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
+P() { echo "$ROOT/projects/$1"; }
+cmd=${1:-}; shift || true
+case $cmd in
+new)
+  d=$(P "$1"); [ -e "$d" ] && { echo "exists: $d" >&2; exit 1; }
+  mkdir -p "$d"/{docs,.team/tasks,.team/out}; git -C "$d" init -q
+  [ -f "$ROOT/idea.template.md" ] && cp "$ROOT/idea.template.md" "$d/docs/idea.md" || echo "# Idea: $1" > "$d/docs/idea.md"
+  echo "$d" ;;
+assign)
+  proj=$1 role=$2 task=$3; d=$(P "$proj"); id="$proj-$role-$(date +%H%M%S)"
+  a="$ROOT/agents/$role.md"; [ -f "$a" ] || { echo "no agent $role" >&2; exit 1; }
+  model=$(sed -n 's/^model: //p' "$a" | head -1)
+  awk '/^---$/{c++;next} c>=2' "$a" > "$d/.team/role-$role.md"
+  win="omp-$proj-$role"; out=".team/out/$id.md"
+  cat > "$d/.team/tasks/$id.md" <<T
+# Task $id (role: $role)
+$task
+
+## When done
+1. Write your result summary to $out (files you created go in docs/ or src/ as usual).
+2. Then run: tmux wait-for -S done-$id
+T
+  s=${TMUX_SESSION:-$(tmux display-message -p '#S')}
+  tmux list-windows -t "$s" -F '#W' | grep -qx "$win" || \
+    tmux new-window -d -t "$s:" -n "$win" -c "$d" "omp --model $model --append-system-prompt $d/.team/role-$role.md; read -p 'omp exited, enter to close'"
+  sleep 3
+  tmux send-keys -t "$s:$win" -l "Read .team/tasks/$id.md and do it exactly."; tmux send-keys -t "$s:$win" Enter
+  echo "$id" ;;
+wait)  tmux wait-for "done-$1" ;;
+ls)    tmux list-windows -a -F '#S:#W' | grep ":omp-" || echo none ;;
+close) s=$(tmux display-message -p '#S'); tmux list-windows -t "$s" -F '#W' | grep "^omp-$1${2:+-$2}" | xargs -r -I{} tmux kill-window -t "$s:{}" ;;
+*) sed -n '2p' "$0"; exit 1 ;;
+esac

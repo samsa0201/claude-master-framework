@@ -1,0 +1,11 @@
+# copy to ~/.omp/agent/models.yml (install.sh does it); key stays out of git
+providers:
+  9router:
+    baseUrl: http://localhost:20128/v1
+    api: openai-completions
+    apiKey: NINEROUTER_API_KEY   # env var name; export it in your shell
+    models:
+      - id: fidt/qwen3.8-flash
+        name: Qwen3.8 Flash (9router)
+        contextWindow: 128000
+        maxTokens: 16000
