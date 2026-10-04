@@ -5,6 +5,10 @@ set -euo pipefail
 ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
 P() { echo "$ROOT/projects/$1"; }
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v n="$1" '$2==n{print $1}' | head -1; }
+# header: pane border shows "role | status task"; window-local, user's global tmux config untouched
+header() { # <pane> <id> <icon> <task text>
+  tmux set-option -p -t "$1" @tid "$2"; tmux set-option -p -t "$1" @task "$3 ${4:0:70}"
+}
 cmd=${1:-}; shift || true
 case $cmd in
 new)
@@ -24,21 +28,26 @@ $task
 1. Write your result summary to .team/out/$id.md
 2. Then run: touch .team/out/$id.done
 T
-  msg="Read .team/tasks/$id.md and do it exactly."
+  msg="Read .team/tasks/$id.md and do it exactly."; title=$(head -1 <<<"$task")
   tag="$proj-$role"; pane=$(pane_of "$tag")
   if [ -n "$pane" ]; then   # reuse live worker: follow-up message
     tmux send-keys -t "$pane" -l "$msg"; sleep 0.3; tmux send-keys -t "$pane" Enter
+    header "$pane" "$id" "⏳" "$title"
   else                      # first message goes in as omp's argument: no startup race
     pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" \
       "omp --model $model --append-system-prompt .team/role-$role.md '$msg'; read -p 'omp exited, enter to close'")
-    tmux set-option -p -t "$pane" @team "$tag"
+    tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"
+    tmux set-option -w -t "$pane" pane-border-status top
+    tmux set-option -w -t "$pane" pane-border-format \
+      ' #{?#{@team},#[bold]#{@team}#[nobold] │ #{@task},claude (lead)} '
     tmux select-layout -t "$pane" main-vertical   # claude stays big on the left, workers stacked right
   fi
   echo "$id" ;;
 wait)  f=$(ls "$ROOT"/projects/*/.team/out/"$1".done 2>/dev/null | head -1 || true)
   for ((i=0; i<${2:-600}; i++)); do
     f=$(ls "$ROOT"/projects/*/.team/out/"$1".done 2>/dev/null | head -1 || true)
-    [ -n "$f" ] && { echo done; exit 0; }; sleep 1
+    [ -n "$f" ] && { pn=$(tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$1" '$2==i{print $1}'); \
+      [ -n "$pn" ] && { t=$(tmux show-option -pqv -t "$pn" @task); header "$pn" "$1" "✓" "${t#* }"; }; echo done; exit 0; }; sleep 1
   done; echo timeout >&2; exit 1 ;;
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;
 close) tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$1${2:+-$2}" 'index($2,p)==1{print $1}' | xargs -r -n1 tmux kill-pane -t ;;
