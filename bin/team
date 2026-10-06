@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# team new <proj> | assign <proj> <role> "<task>" | wait <id> [secs] | ls | close <proj> [role]
+# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" | wait <id> [secs] | ls | close <proj> [role]
 # Workers = omp in tmux PANES of the window you run claude in (tagged @team=<proj>-<role>).
 set -euo pipefail
 ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
@@ -15,13 +15,22 @@ new)
   d=$(P "$1"); [ -e "$d" ] && { echo "exists: $d" >&2; exit 1; }
   mkdir -p "$d"/{docs,.team/tasks,.team/out}; git -C "$d" init -q
   echo "# Idea: $1" > "$d/docs/idea.md"; echo "$d" ;;
+attach) # existing repo: isolated git worktree on a new branch, main checkout untouched
+  d=$(P "$1"); r=$(readlink -f "$2"); b=${3:-feat/$1}; [ -e "$d" ] && { echo "exists: $d" >&2; exit 1; }
+  git -C "$r" worktree add -q -b "$b" "$d"   # ponytail: git repos only; node_modules/.env aren't copied, install in the worktree
+  mkdir -p "$d"/docs "$d"/.team/{tasks,out}
+  printf '.team/\ndocs/feature*.md\n' >> "$(git -C "$d" rev-parse --git-path info/exclude)"  # keep studio files out of their diff
+  echo "$d" ;;
 assign)
-  proj=$1 role=$2 task=$3; d=$(P "$proj"); id="$proj-$role-$(date +%H%M%S)"
-  a="$ROOT/agents/$role.md"; [ -f "$a" ] || { echo "no agent $role" >&2; exit 1; }
+  proj=$1 role=$2 task=$3; d=$(P "$proj")
+  [[ $role =~ ^[a-z][a-z0-9-]*$ ]] || { echo "role must be lowercase-with-dashes (e.g. backend-dev)" >&2; exit 1; }
+  id="$proj-$role-$(date +%H%M%S)"
+  a="$ROOT/agents/$role.md"; [ -f "$a" ] || a="$ROOT/agents/_base.md"   # any role name works; unknown ones use _base
   model=$(sed -n 's/^model: //p' "$a" | head -1)
   awk '/^---$/{c++;next} c>=2' "$a" > "$d/.team/role-$role.md"
   cat > "$d/.team/tasks/$id.md" <<T
 # Task $id (role: $role)
+You are acting as: $role.
 $task
 
 ## When done (in this order)
