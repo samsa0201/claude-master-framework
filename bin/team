@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" | wait <id> [secs] | ls | close <proj> [role]
+# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--model <id>] [--new] | wait <id> [secs] | ls | close <proj> [role]
 # Workers = omp in tmux PANES of the window you run claude in (tagged @team=<proj>-<role>).
 set -euo pipefail
 ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
@@ -22,11 +22,12 @@ attach) # existing repo: isolated git worktree on a new branch, main checkout un
   printf '.team/\ndocs/feature*.md\n' >> "$(git -C "$d" rev-parse --git-path info/exclude)"  # keep studio files out of their diff
   echo "$d" ;;
 assign)
-  proj=$1 role=$2 task=$3; d=$(P "$proj")
+  proj=$1 role=$2 task=$3; shift 3; d=$(P "$proj"); mopt= newp=
+  while [ $# -gt 0 ]; do case $1 in --model) mopt=$2; shift 2 ;; --new) newp=1; shift ;; *) echo "unknown flag $1" >&2; exit 1 ;; esac; done
   [[ $role =~ ^[a-z][a-z0-9-]*$ ]] || { echo "role must be lowercase-with-dashes (e.g. backend-dev)" >&2; exit 1; }
   id="$proj-$role-$(date +%H%M%S)"
   a="$ROOT/agents/$role.md"; [ -f "$a" ] || a="$ROOT/agents/_base.md"   # any role name works; unknown ones use _base
-  model=$(sed -n 's/^model: //p' "$a" | head -1)
+  model=${mopt:-$(sed -n 's/^model: //p' "$a" | head -1)}   # --model overrides the role's default
   awk '/^---$/{c++;next} c>=2' "$a" > "$d/.team/role-$role.md"
   cat > "$d/.team/tasks/$id.md" <<T
 # Task $id (role: $role)
@@ -39,6 +40,7 @@ $task
 T
   msg="Read .team/tasks/$id.md and do it exactly."; title=$(head -1 <<<"$task")
   tag="$proj-$role"; pane=$(pane_of "$tag")
+  [ -n "$newp" ] && { n=2; while [ -n "$(pane_of "$tag-$n")" ]; do n=$((n+1)); done; tag="$tag-$n"; pane=; }   # --new: extra parallel worker
   if [ -n "$pane" ]; then   # reuse live worker: follow-up message
     tmux send-keys -t "$pane" -l "$msg"; sleep 0.3; tmux send-keys -t "$pane" Enter
     header "$pane" "$id" "⏳" "$title"

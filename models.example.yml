@@ -9,3 +9,7 @@ providers:
         name: Qwen3.8 Flash (9router)
         contextWindow: 128000
         maxTokens: 16000
+      - id: fidt/deepseek-v4.1-flash
+        name: DeepSeek V4.1 Flash (9router)
+        contextWindow: 128000
+        maxTokens: 16000

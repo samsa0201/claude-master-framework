@@ -22,6 +22,11 @@ You (Claude) are **product lead + architect**. omp workers (model `9router/fidt/
 4. Slices as in the main flow (tasks name exact existing files; tell workers to match surrounding style and not refactor). Review each diff with `git -C projects/<name> diff`; QA runs the repo's existing tests.
 5. Finish: user decides merge/PR; then `git worktree remove projects/<name>`.
 
+## Choosing model / parallel workers (you decide; ask the user only if cost is unclear)
+`team assign <name> <role> "<task>" [--model <id>] [--new]`
+- Default `9router/fidt/qwen3.8-flash` (cheap, routine slices). `--model 9router/fidt/deepseek-v4.1-flash` for harder reasoning (architecture-heavy, security, tricky debugging). Models available: `~/.omp/agent/models.yml`.
+- `--new` spawns an extra parallel worker (`<role>-2`, ...) instead of reusing the live pane. Reuse (default) keeps context; use `--new` for independent work or a fresh context.
+
 ## Rules
 - Never read or print API keys. Key lives in `NINEROUTER_API_KEY` / `~/.omp/agent/models.yml`.
 - Each product is its own git repo under `projects/` (gitignored here). Improve the framework by editing `agents/`, `bin/team`, this file; commit here.
