@@ -39,5 +39,5 @@ Headed browsers (e.g. `bun run test:e2e:login`) are invisible to the user. Inste
 1. User on Mac: `ssh -L <port>:localhost:<port> <linux-host>` (e.g. 5173 for the magisk dev server).
 2. User logs in at `http://localhost:<port>` in the Mac browser (OAuth callback stays localhost:<port>).
 3. DevTools console: `copy(JSON.stringify({cookies:[],origins:[{origin:location.origin,localStorage:Object.entries(localStorage).map(([name,value])=>({name,value}))}]}))`
-4. In their own SSH terminal (NOT `!` in chat, keeps tokens out of the transcript): `cat > <repo>/tests/e2e/.auth/user.json`, paste, Ctrl-D.
-Then use it only through the repo's Playwright config (`storageState`), never copy/print the token. Ask before downloading Playwright browsers.
+4. In a NEW local Mac terminal (not `!` in chat, keeps tokens out of the transcript): `pbpaste | ssh <linux-host> 'cat > <repo>/tests/e2e/.auth/user.json'`. Do NOT paste into `cat >` over SSH: the tty cuts lines at 4095 chars and corrupts the JSON.
+Then use it only through the repo's Playwright config (`storageState`), never copy/print the token. A worktree can reach it via a gitignored symlink `tests/e2e/.auth -> <main checkout>/tests/e2e/.auth`. Ask before downloading Playwright browsers.
