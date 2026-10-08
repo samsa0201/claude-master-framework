@@ -24,7 +24,7 @@ You (Claude) are **product lead + architect**. omp workers (model `9router/fidt/
 
 ## Choosing model / parallel workers (you decide; ask the user only if cost is unclear)
 `team assign <name> <role> "<task>" [--model <id>] [--new]`
-- Default `9router/fidt/qwen3.8-flash` (cheap, routine slices). `--model 9router/fidt/deepseek-v4.1-flash` for harder reasoning (architecture-heavy, security, tricky debugging). Models available: `~/.omp/agent/models.yml`.
+- Default `9router/fidt/qwen3.8-flash` (cheap, routine slices). `--model 9router/fidt/deepseek-v4.1-flash` for harder reasoning (architecture-heavy, security, tricky debugging). `--model 9router/fidt/kCode` for coding-heavy slices (web-dev/android-dev/backend). Models available: `~/.omp/agent/models.yml`.
 - `--new` spawns an extra parallel worker (`<role>-2`, ...) instead of reusing the live pane. Reuse (default) keeps context; use `--new` for independent work or a fresh context.
 
 ## Rules
@@ -32,3 +32,4 @@ You (Claude) are **product lead + architect**. omp workers (model `9router/fidt/
 - Each product is its own git repo under `projects/` (gitignored here). Improve the framework by editing `agents/`, `bin/team`, this file; commit here.
 - Only touch tmux panes tagged `@team`. Use `team ls`, `team close <name> [role]`.
 - Keep tasks small and self-contained; workers are cheap models and need explicit file paths + done criteria.
+- `team ui [port]` (default 7777): cute live "office" view (bots walk to you for tasks, type, cheer when done). Suggest it to the user when work starts.

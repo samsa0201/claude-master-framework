@@ -1,0 +1,271 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio Office</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+<style>
+  :root {
+    --bg: #fff7ef; --floor: #fde9d9; --ink: #4a3f55; --muted: #9a8fa6;
+    --card: #ffffff; --line: #f1dccb; --boss: #ff9f6b; --ok: #5cc98b; --warn: #c7bfd0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.4 ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 16px 20px 8px; }
+  h1 { margin: 0; font-size: 20px; }
+  h1 small { color: var(--muted); font-weight: 500; font-size: 13px; margin-left: 6px; }
+  #tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+  #tabs button { border: 2px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px;
+    padding: 4px 12px; font: inherit; cursor: pointer; }
+  #tabs button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  #tabs button .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok);
+    margin-left: 6px; vertical-align: middle; animation: pulse 1.2s infinite; }
+
+  main { display: grid; grid-template-columns: 1fr 320px; gap: 16px; padding: 8px 20px 20px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+
+  #office { position: relative; min-height: 460px; border-radius: 24px; overflow: hidden; padding: 24px;
+    background: repeating-linear-gradient(45deg, var(--floor) 0 22px, #fbe2cf 22px 44px);
+    border: 3px solid var(--line); display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 600px) { #office { grid-template-columns: 1fr; } }
+  #desks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 28px 16px; }
+
+  .desk { position: relative; display: flex; flex-direction: column; align-items: center; padding-top: 70px; }
+  .desk.boss { padding-top: 84px; }
+  .bubble { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 150px; min-height: 52px;
+    background: var(--card); border-radius: 14px; padding: 6px 9px; font-size: 11.5px; box-shadow: 0 3px 0 var(--line); z-index: 2; }
+  .bubble span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .bubble::after { content: ""; position: absolute; bottom: -7px; left: 50%; margin-left: -7px;
+    border: 7px solid transparent; border-bottom: 0; border-top-color: var(--card); }
+  .boss .bubble { width: 190px; font-size: 12.5px; }
+  .bubble:empty { display: none; }
+  .bubble b { color: var(--muted); font-weight: 600; }
+
+  .bot { width: 72px; height: 84px; position: relative; z-index: 3; }
+  .boss .bot { width: 96px; height: 112px; }
+  .bot svg { width: 100%; height: 100%; overflow: visible; }
+  .table { width: 120px; height: 18px; border-radius: 8px; background: #c99a74; margin-top: -10px; position: relative;
+    box-shadow: 0 4px 0 #a97c58; z-index: 4; }
+  .table::before { content: ""; position: absolute; left: 34px; top: -22px; width: 52px; height: 24px; border-radius: 5px 5px 2px 2px;
+    background: #6e6a80; border: 3px solid #4f4b60; }
+  .working:not(.boss) .table::before { background: #8de0ff; box-shadow: 0 0 14px #8de0ff; animation: screen .4s steps(2) infinite; }
+  .boss .table { width: 150px; background: #b88660; }
+  .boss .table::before { content: "☕"; background: none; border: 0; left: 108px; top: -20px; font-size: 18px; }
+  .name { margin-top: 12px; font-weight: 700; background: var(--card); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
+  .meta { color: var(--muted); font-size: 11px; height: 15px; }
+
+  /* bot parts */
+  .eye { animation: blink 4s infinite; transform-origin: center; transform-box: fill-box; }
+  .bulb { animation: pulse 1.6s infinite; }
+  .arm-l, .arm-r { transform-box: fill-box; transform-origin: top center; }
+  .leg-l, .leg-r { transform-box: fill-box; transform-origin: top center; }
+  .working .bot svg { animation: bob .5s ease-in-out infinite; }
+  .working .arm-l { animation: type .25s infinite alternate; }
+  .working .arm-r { animation: type .25s .12s infinite alternate; }
+  .walking .leg-l { animation: step .3s infinite alternate; }
+  .walking .leg-r { animation: step .3s .15s infinite alternate-reverse; }
+  .walking .bot svg { animation: bob .3s infinite; }
+  .cheer .bot svg { animation: jump .5s ease-out 3; }
+  .cheer .arm-l, .cheer .arm-r { transform: rotate(180deg); }
+  .stale .bot { filter: grayscale(1) opacity(.65); }
+  .idle .bot svg { animation: breathe 3s ease-in-out infinite; }
+  .zzz { position: absolute; top: 44px; right: 22px; font-weight: 800; color: var(--muted); display: none; z-index: 5; }
+  .idle .zzz { display: block; animation: zzz 2.4s infinite; }
+  .paper { position: absolute; top: 30px; left: -8px; font-size: 22px; display: none; z-index: 6; }
+  .carrying .paper { display: block; }
+
+  @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @keyframes bob { 50% { transform: translateY(-4px); } }
+  @keyframes breathe { 50% { transform: translateY(2px) scale(1.01, .99); } }
+  @keyframes type { from { transform: rotate(-25deg); } to { transform: rotate(-55deg); } }
+  @keyframes step { from { transform: rotate(-22deg); } to { transform: rotate(22deg); } }
+  @keyframes jump { 40% { transform: translateY(-22px); } }
+  @keyframes screen { 50% { filter: brightness(1.2); } }
+  @keyframes zzz { 0% { opacity: 0; transform: translate(0, 6px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(10px, -14px); } }
+  @keyframes pop { from { transform: scale(.4); opacity: 0; } }
+
+  aside { background: var(--card); border-radius: 24px; border: 3px solid var(--line); padding: 14px 16px; max-height: 560px;
+    display: flex; flex-direction: column; }
+  aside h2 { margin: 0 0 8px; font-size: 15px; }
+  #feed { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+  #feed li { padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; animation: pop .35s; }
+  #feed time { color: var(--muted); font-size: 11px; margin-right: 6px; font-variant-numeric: tabular-nums; }
+  #feed .tag { font-weight: 700; }
+  .empty { color: var(--muted); padding: 30px; text-align: center; grid-column: 1 / -1; }
+  #err { color: #d65; font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
+</style>
+
+<header>
+  <h1>🏢 Studio Office <small id="sub"></small></h1>
+  <span id="err"></span>
+  <nav id="tabs"></nav>
+</header>
+<main>
+  <section id="office" aria-label="office">
+    <div class="desk boss idle" id="boss">
+      <div class="bubble"></div>
+      <span class="zzz">z</span>
+      <div class="bot"></div>
+      <div class="table"></div>
+      <div class="name">Claude · lead</div>
+      <div class="meta"></div>
+    </div>
+    <div id="desks"></div>
+  </section>
+  <aside><h2>📋 Activity</h2><ul id="feed"></ul></aside>
+</main>
+
+<script>
+const ROLE_COLORS = { pm: "#b38cff", ux: "#ff8fb8", "web-dev": "#6cc4ff", "android-dev": "#7ddc9a", qa: "#ffc857",
+  "backend-dev": "#5fd3c6", "frontend-dev": "#8aa8ff" };
+const color = r => ROLE_COLORS[r] || `hsl(${[...r].reduce((h, c) => h * 31 + c.charCodeAt(0), 7) % 360} 75% 72%)`;
+const botSvg = (c, crown) => `<svg viewBox="0 0 80 96">
+  ${crown ? '<path d="M24 10 L30 0 L36 8 L40 -2 L44 8 L50 0 L56 10 Z" fill="#ffd34d" stroke="#e0a800" stroke-width="2"/>' : ""}
+  <line x1="40" y1="14" x2="40" y2="4" stroke="#4a3f55" stroke-width="3"/>
+  <circle class="bulb" cx="40" cy="4" r="4" fill="${crown ? "#ff5b5b" : "#ff8a65"}"/>
+  <rect x="14" y="14" width="52" height="40" rx="16" fill="${c}" stroke="#4a3f55" stroke-width="3"/>
+  <rect x="21" y="22" width="38" height="24" rx="10" fill="#3b3450"/>
+  <ellipse class="eye" cx="32" cy="34" rx="4" ry="5" fill="#9ff7ff"/>
+  <ellipse class="eye" cx="48" cy="34" rx="4" ry="5" fill="#9ff7ff"/>
+  <circle cx="22" cy="44" r="3" fill="#ff9fb3" opacity=".8"/><circle cx="58" cy="44" r="3" fill="#ff9fb3" opacity=".8"/>
+  <rect class="arm-l" x="8" y="58" width="9" height="20" rx="4.5" fill="${c}" stroke="#4a3f55" stroke-width="3"/>
+  <rect class="arm-r" x="63" y="58" width="9" height="20" rx="4.5" fill="${c}" stroke="#4a3f55" stroke-width="3"/>
+  <rect class="leg-l" x="27" y="78" width="9" height="16" rx="4" fill="#4a3f55"/>
+  <rect class="leg-r" x="44" y="78" width="9" height="16" rx="4" fill="#4a3f55"/>
+  <rect x="18" y="54" width="44" height="28" rx="12" fill="${c}" stroke="#4a3f55" stroke-width="3"/>
+  <circle cx="40" cy="67" r="5" fill="#fff" opacity=".7"/>
+</svg>`;
+document.querySelector("#boss .bot").innerHTML = botSvg("#ff9f6b", true);
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const ago = t => { const s = Math.max(0, Date.now() / 1000 - t | 0); return s < 60 ? s + "s" : s < 3600 ? (s / 60 | 0) + "m" : (s / 3600 | 0) + "h"; };
+let proj = null, prev = null, data = { tasks: [], live: [] };
+const desks = {}; // role -> element (current project)
+const busy = new WeakMap(); // desk -> promise chain so walks queue up instead of overlapping
+
+function desk(role) {
+  if (desks[role]) return desks[role];
+  const el = document.createElement("div");
+  el.className = "desk idle";
+  el.innerHTML = `<div class="bubble"></div><span class="zzz">z</span><div class="bot">${botSvg(color(role))}<span class="paper">📄</span></div>
+    <div class="table"></div><div class="name">${esc(role)}</div><div class="meta"></div>`;
+  $("#desks").append(el);
+  return desks[role] = el;
+}
+
+// worker walks to Claude's desk and back; `carry` = holding the paper on the way there (true) or back (false)
+function walk(el, carryThere) {
+  const run = async () => {
+    const bot = el.querySelector(".bot"), a = bot.getBoundingClientRect(), b = $("#boss .bot").getBoundingClientRect();
+    const dx = b.right + 10 - a.left, dy = b.top + (b.height - a.height) - a.top;
+    const go = (from, to) => bot.animate([{ transform: from }, { transform: to }],
+      { duration: Math.min(2400, 600 + Math.hypot(dx, dy) * 2.2), easing: "ease-in-out", fill: "forwards" }).finished;
+    el.dataset.walk = 1;
+    el.classList.add("walking"); el.classList.toggle("carrying", carryThere);
+    await go("translate(0,0)", `translate(${dx}px,${dy}px)`);
+    el.classList.remove("walking"); el.classList.toggle("carrying", !carryThere);
+    await new Promise(r => setTimeout(r, 700));
+    el.classList.add("walking");
+    await go(`translate(${dx}px,${dy}px)`, "translate(0,0)");
+    el.classList.remove("walking", "carrying");
+    delete el.dataset.walk;
+    bot.getAnimations().forEach(x => x.cancel());
+  };
+  const p = (busy.get(el) || Promise.resolve()).then(run);
+  busy.set(el, p);
+  return p;
+}
+
+function boss(text, ms = 3500) {
+  const b = $("#boss .bubble");
+  b.innerHTML = text && `<span>${text}</span>`;
+  clearTimeout(boss.t);
+  boss.t = ms ? setTimeout(() => { boss.t = null; renderBossIdle(); }, ms) : null;
+}
+function renderBossIdle() {
+  const ts = data.tasks.filter(t => t.proj === proj), w = ts.filter(t => t.status === "working").length;
+  $("#boss").className = "desk boss " + (w ? "working" : "idle");
+  boss(w ? `Đang chờ <b>${w}</b> bot báo cáo… 👀` : ts.length ? "Team đang nghỉ ☕" : "", 0);
+}
+
+function feed(text, t) {
+  const li = document.createElement("li");
+  li.innerHTML = `<time>${hhmm(t)}</time>${text}`;
+  $("#feed").prepend(li);
+}
+
+function render(animate) {
+  const ts = data.tasks.filter(t => t.proj === proj);
+  const byRole = {};
+  for (const t of ts) byRole[t.role] = t; // tasks are sorted by start; last one per role wins
+  if (!ts.length) $("#desks").innerHTML = '<div class="empty">Chưa có task nào cho project này 🌱</div>';
+  else $("#desks .empty")?.remove();
+  for (const [role, t] of Object.entries(byRole)) {
+    const el = desk(role);
+    if (el.dataset.walk) continue;
+    const recentDone = t.status === "done" && Date.now() / 1000 - t.end < 20;
+    el.className = "desk " + (t.status === "working" ? "working" : t.status === "stale" ? "stale" : recentDone ? "cheer" : "idle");
+    const msg = t.status === "working" ? esc(t.title || t.summary)
+      : t.status === "stale" ? "<b>❓ bị bỏ dở:</b> " + esc(t.title) : t.status === "done" && recentDone ? "✅ Xong rồi nè!" : "";
+    el.querySelector(".bubble").innerHTML = msg && `<span>${msg}</span>`;
+    el.querySelector(".bubble").title = t.title || t.summary;
+    el.querySelector(".meta").textContent = t.status === "working" ? "⏱ " + ago(t.start) : t.end ? "xong " + ago(t.end) + " trước" : "";
+  }
+  if (!boss.t) renderBossIdle();
+  if (!animate || !prev) return;
+  const old = Object.fromEntries(prev.map(t => [t.id, t]));
+  for (const t of ts) {
+    const o = old[t.id], el = desk(t.role);
+    if (!o) {
+      boss(`📨 Giao cho <b>${esc(t.role)}</b>: ${esc((t.title || "").slice(0, 70))}`);
+      feed(`👑 Claude → <span class="tag" style="color:${color(t.role)}">${esc(t.role)}</span>: ${esc(t.title)}`, t.start);
+      walk(el, false).then(() => render(false));
+    } else if (o.status !== "done" && t.status === "done") {
+      boss(`🎉 <b>${esc(t.role)}</b> xong rồi, để mình review diff…`);
+      feed(`✅ <span class="tag" style="color:${color(t.role)}">${esc(t.role)}</span> xong: ${esc(t.summary || t.title)}`, t.end);
+      walk(el, true).then(() => render(false));
+    }
+  }
+}
+
+function tabs() {
+  const projs = [...new Set(data.tasks.map(t => t.proj))];
+  const last = p => Math.max(...data.tasks.filter(t => t.proj === p).map(t => t.end || t.start));
+  projs.sort((a, b) => last(b) - last(a));
+  if (!proj || !projs.includes(proj)) proj = projs[0];
+  $("#tabs").innerHTML = projs.map(p => `<button data-p="${esc(p)}" class="${p === proj ? "on" : ""}">${esc(p)}${
+    data.tasks.some(t => t.proj === p && t.status === "working") ? '<span class="dot"></span>' : ""}</button>`).join("");
+  $("#sub").textContent = `${data.live.length} bot online · ${data.tasks.filter(t => t.status === "working").length} đang làm`;
+}
+$("#tabs").onclick = e => {
+  const p = e.target.closest("button")?.dataset.p;
+  if (!p || p === proj) return;
+  proj = p; prev = null;
+  for (const k in desks) delete desks[k];
+  $("#desks").innerHTML = ""; $("#feed").innerHTML = "";
+  backfill(); tabs(); render(false);
+};
+function backfill() { // history for the feed, oldest first so newest ends on top
+  for (const t of data.tasks.filter(t => t.proj === proj).slice(-15)) {
+    feed(`👑 Claude → <span class="tag" style="color:${color(t.role)}">${esc(t.role)}</span>: ${esc(t.title || t.summary)}`, t.start);
+    if (t.end) feed(`✅ <span class="tag" style="color:${color(t.role)}">${esc(t.role)}</span> xong: ${esc(t.summary || t.title)}`, t.end);
+  }
+}
+
+async function tick() {
+  try {
+    data = await (await fetch("/state")).json();
+    $("#err").textContent = "";
+    const first = !proj;
+    tabs();
+    if (first) backfill();
+    render(true);
+    prev = data.tasks.filter(t => t.proj === proj);
+  } catch (e) { $("#err").textContent = "⚠ mất kết nối tới team ui"; }
+}
+tick(); setInterval(tick, 2000);
+</script>

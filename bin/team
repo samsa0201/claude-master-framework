@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--model <id>] [--new] | wait <id> [secs] | ls | close <proj> [role]
+# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--model <id>] [--new] | wait <id> [secs] | ls | close <proj> [role] | ui [port]
 # Workers = omp in tmux PANES of the window you run claude in (tagged @team=<proj>-<role>).
 set -euo pipefail
 ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
@@ -60,6 +60,7 @@ wait)  f=$(ls "$ROOT"/projects/*/.team/out/"$1".done 2>/dev/null | head -1 || tr
     [ -n "$f" ] && { pn=$(tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$1" '$2==i{print $1}'); \
       [ -n "$pn" ] && { t=$(tmux show-option -pqv -t "$pn" @task); header "$pn" "$1" "✓" "${t#* }"; }; echo done; exit 0; }; sleep 1
   done; echo timeout >&2; exit 1 ;;
+ui)    exec python3 "$ROOT/ui/serve.py" "${1:-7777}" ;;   # cute live office view of all projects
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;
 close) tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$1${2:+-$2}" 'index($2,p)==1{print $1}' | xargs -r -n1 tmux kill-pane -t ;;
 *) sed -n '2p' "$0"; exit 1 ;;

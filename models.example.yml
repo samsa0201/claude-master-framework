@@ -13,3 +13,7 @@ providers:
         name: DeepSeek V4.1 Flash (9router)
         contextWindow: 128000
         maxTokens: 16000
+      - id: fidt/kCode
+        name: kCode (9router)
+        contextWindow: 128000
+        maxTokens: 16000
