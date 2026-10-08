@@ -33,3 +33,11 @@ You (Claude) are **product lead + architect**. omp workers (model `9router/fidt/
 - Only touch tmux panes tagged `@team`. Use `team ls`, `team close <name> [role]`.
 - Keep tasks small and self-contained; workers are cheap models and need explicit file paths + done criteria.
 - `team ui [port]` (default 7777): cute live "office" view (bots walk to you for tasks, type, cheer when done). Suggest it to the user when work starts.
+
+## Browser login over SSH (user works from a Mac via SSH, no display on this Linux box)
+Headed browsers (e.g. `bun run test:e2e:login`) are invisible to the user. Instead:
+1. User on Mac: `ssh -L <port>:localhost:<port> <linux-host>` (e.g. 5173 for the magisk dev server).
+2. User logs in at `http://localhost:<port>` in the Mac browser (OAuth callback stays localhost:<port>).
+3. DevTools console: `copy(JSON.stringify({cookies:[],origins:[{origin:location.origin,localStorage:Object.entries(localStorage).map(([name,value])=>({name,value}))}]}))`
+4. In their own SSH terminal (NOT `!` in chat, keeps tokens out of the transcript): `cat > <repo>/tests/e2e/.auth/user.json`, paste, Ctrl-D.
+Then use it only through the repo's Playwright config (`storageState`), never copy/print the token. Ask before downloading Playwright browsers.
