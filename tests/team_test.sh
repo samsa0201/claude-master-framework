@@ -28,5 +28,20 @@ id3=$("$T" assign p1 pm "parallel" --runtime fake --new)
 check "--new spawns pm-2" test "$(waits "$id3")" = done
 check "pm-2 pane exists" bash -c "'$T' ls | grep -q ' p1-pm-2$'"
 
+"$T" new p2 >/dev/null
+mkdir -p "$TEAM_PROJECTS/p2/.team/roles"
+printf -- '---\nmodel: fidt/kCode\n---\nFLEX-FE: React + Vite, test with npm test\n' > "$TEAM_PROJECTS/p2/.team/roles/dev-fe.md"
+id=$("$T" assign p2 dev-fe "x" --runtime fake); waits "$id" >/dev/null
+check "suffix role uses base dev.md" grep -q "TDD" "$TEAM_PROJECTS/p2/.team/out/$id.md"
+check "flex body appended" grep -q "FLEX-FE" "$TEAM_PROJECTS/p2/.team/out/$id.md"
+check "flex model overrides base" grep -q "model=fidt/kCode" "$TEAM_PROJECTS/p2/.team/out/$id.md"
+id=$("$T" assign p2 dev-be "x" --runtime fake); waits "$id" >/dev/null
+check "base default model" grep -q "model=fidt/qwen3.8-flash" "$TEAM_PROJECTS/p2/.team/out/$id.md"
+id=$("$T" assign p2 dev-fe "y" --runtime fake --model fidt/other --new); waits "$id" >/dev/null
+check "--model beats flex" grep -q "model=fidt/other" "$TEAM_PROJECTS/p2/.team/out/$id.md"
+id=$("$T" assign p2 writer "x" --runtime fake); waits "$id" >/dev/null
+check "unknown role -> _base" grep -q "described in the task file" "$TEAM_PROJECTS/p2/.team/out/$id.md"
+check "no frontmatter leaks into prompt" bash -c "! grep -q '^model:' '$TEAM_PROJECTS/p2/.team/out/$id.md'"
+check "flex without frontmatter is whole body" bash -c "printf 'PLAIN-FLEX\n' > '$TEAM_PROJECTS/p2/.team/roles/docs.md'; i=\$('$T' assign p2 docs x --runtime fake); '$T' wait \$i 20 >/dev/null; grep -q PLAIN-FLEX '$TEAM_PROJECTS/p2/.team/out/'\$i.md"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

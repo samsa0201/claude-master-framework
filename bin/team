@@ -6,6 +6,10 @@ ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
 PROJ=${TEAM_PROJECTS:-$ROOT/projects}
 P() { echo "$PROJ/$1"; }
 die() { echo "$*" >&2; exit 1; }
+fm() { awk -v k="$2" '/^---$/{c++;next} c==1 && index($0,k": ")==1{print substr($0,length(k)+3); exit}' "$1" 2>/dev/null; }   # frontmatter value
+body() { awk 'NR==1&&$0!="---"{c=2} /^---$/&&c<2{c++;next} c>=2' "$1"; }   # text after frontmatter (whole file if none)
+base_of() { local r=$1; while :; do [ -f "$ROOT/agents/$r.md" ] && { echo "$ROOT/agents/$r.md"; return; }; [[ $r == *-* ]] || break; r=${r%-*}; done; echo "$ROOT/agents/_base.md"; }   # dev-fe -> dev.md
+pick() { local v=$2; [ -n "$v" ] || v=$(fm "$flex" "$1"); [ -n "$v" ] || v=$(fm "$a" "$1"); echo "${v:-$3}"; }   # flag > flex > base > default
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v n="$1" '$2==n{print $1}' | head -1; }
 # header: pane border shows "role | status task"; window-local, user's global tmux config untouched
 header() { # <pane> <id> <icon> <task text>
@@ -15,12 +19,12 @@ cmd=${1:-}; shift || true
 case $cmd in
 new)
   d=$(P "$1"); [ -e "$d" ] && { echo "exists: $d" >&2; exit 1; }
-  mkdir -p "$d"/{docs,.team/tasks,.team/out}; git -C "$d" init -q
+  mkdir -p "$d"/{docs,.team/tasks,.team/out,.team/roles}; git -C "$d" init -q
   echo "# Idea: $1" > "$d/docs/idea.md"; echo "$d" ;;
 attach) # existing repo: isolated git worktree on a new branch, main checkout untouched
   d=$(P "$1"); r=$(readlink -f "$2"); b=${3:-feat/$1}; [ -e "$d" ] && { echo "exists: $d" >&2; exit 1; }
   git -C "$r" worktree add -q -b "$b" "$d"   # ponytail: git repos only; node_modules/.env aren't copied, install in the worktree
-  mkdir -p "$d"/docs "$d"/.team/{tasks,out}
+  mkdir -p "$d"/docs "$d"/.team/{tasks,out,roles}
   printf '.team/\ndocs/feature*.md\n' >> "$(git -C "$d" rev-parse --git-path info/exclude)"  # keep studio files out of their diff
   echo "$d" ;;
 assign)
@@ -30,14 +34,14 @@ assign)
   [ -d "$d" ] || die "no project: $d"
   id="$proj-$role-$(date +%H%M%S)"
   n=2; while [ -e "$d/.team/tasks/$id.md" ]; do id="${id%-[0-9]}-$n"; n=$((n+1)); done   # same-second assigns must not overwrite each other's task
-  a="$ROOT/agents/$role.md"; [ -f "$a" ] || a="$ROOT/agents/_base.md"   # any role name works; unknown ones use _base
-  runtime=${ropt:-opencode}
-  model=${mopt:-fidt/qwen3.8-flash}
-  browser=none
+  a=$(base_of "$role"); flex="$d/.team/roles/$role.md"
+  runtime=$(pick runtime "$ropt" opencode)
+  model=$(pick model "$mopt" fidt/qwen3.8-flash)
+  browser=$(pick browser "" none)
   rt="$ROOT/agents/runtime/$runtime.sh"; [ -f "$rt" ] || die "unknown runtime: $runtime (see agents/runtime/)"
   msg="Read .team/tasks/$id.md and do it exactly."
   source "$rt"; rt_preflight
-  awk '/^---$/{c++;next} c>=2' "$a" > "$d/.team/role-$role.md"
+  { body "$a"; [ -f "$flex" ] && { printf '\n## Project notes (from lead)\n'; body "$flex"; }; } > "$d/.team/role-$role.md"
   tag="$proj-$role"; pane=$(pane_of "$tag")
   [ -n "$newp" ] && { n=2; while [ -n "$(pane_of "$tag-$n")" ]; do n=$((n+1)); done; tag="$tag-$n"; pane=; }   # --new: extra parallel worker
   cat > "$d/.team/tasks/$id.md" <<T
