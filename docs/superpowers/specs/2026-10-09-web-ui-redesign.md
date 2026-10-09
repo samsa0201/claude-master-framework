@@ -1,6 +1,6 @@
 # Web UI (`team ui`) — làm lại
 
-Ngày: 2026-10-09. Trạng thái: chờ người dùng review (chưa viết code).
+Ngày: 2026-10-09. Trạng thái: đã duyệt, đang làm (slice 1 xong).
 
 ## Mục tiêu
 Thay màn hình Pip-Boy (văn phòng pixel, CRT, roi cursor) bằng dashboard hiện đại, gọn, đọc được khi làm việc lâu. Vẫn **chỉ xem** (không ghi gì), nhưng thêm: đọc tài liệu dự án và xem diff của worktree.
@@ -38,18 +38,19 @@ Do lead chọn (đổi được): CSS thuần với design token (không Tailwin
 ## API (`ui/serve.py`, stdlib, chỉ GET)
 | Route | Trả về |
 |---|---|
-| `GET /api/state` | như `/state` hiện tại (tasks, live, panes) — giữ nguyên shape |
+| `GET /api/state` | như `/state` hiện tại (tasks, live, panes) + `projects` (mọi project có `.team/`, kể cả chưa có task) |
 | `GET /api/term?tag=` | như `/term` hiện tại |
 | `GET /api/projects/<p>/files` | danh sách `.md` trong `docs/`, `.team/roles/`, `.team/tasks/`, `.team/out/` |
 | `GET /api/projects/<p>/file?path=` | nội dung một file `.md` ở trên |
-| `GET /api/projects/<p>/diff` | `git diff HEAD` (uncommitted) + `git status --porcelain` (file chưa track) |
+| `GET /api/projects/<p>/diff` | `git diff HEAD` (uncommitted) + file chưa track hiện như diff "new file" (tối đa 50 file, mỗi file ≤ 100 KB; bỏ qua binary, symlink, `.env*`/`*.pem`/`*.key`/`auth.json`, kèm lý do trong `skipped`) |
 | `GET /api/projects/<p>/log` / `.../commit?sha=` | 30 commit gần nhất / `git show` một commit |
 | `GET /*` | file tĩnh trong `ui/dist/`, không có thì trả `index.html` (SPA) |
 
 Bảo vệ (đầu vào do worker model rẻ tạo ra nên coi là không tin cậy):
-- `<p>` khớp `^[a-z0-9][a-z0-9-]*$` và là thư mục thật dưới `projects/`; `sha` khớp `^[0-9a-f]{7,40}$`.
+- `<p>` khớp `^[A-Za-z0-9][A-Za-z0-9._-]*$` (không chứa `/`, không bắt đầu bằng dấu chấm; `team new` không giới hạn tên nên không ép chữ thường) và là thư mục thật dưới `projects/`; `sha` khớp `^[0-9a-f]{7,40}$`.
 - `path`: chỉ `.md`, `realpath` phải nằm trong 4 thư mục whitelist (chặn `../` và symlink), tối đa 512 KB.
-- Git chạy bằng `subprocess` dạng list (không shell), kèm `--no-ext-diff --no-textconv --no-color`, timeout 5s, output cắt ở 1 MB và báo "truncated".
+- Git chạy bằng `subprocess` dạng list (không shell), kèm `-c core.fsmonitor=false --no-ext-diff --no-textconv --no-color`, `GIT_OPTIONAL_LOCKS=0`, timeout 5s, output cắt ở 1 MB và báo "truncated". Chỉ chạy khi project có `.git` riêng (không thì git sẽ đi ngược lên repo studio). Repo chưa có commit thì diff với empty tree.
+- Header `Host` phải là `localhost`/`127.0.0.1`/`::1` (chặn DNS rebinding đọc diff từ trang web khác); thêm host khác (vd. `tailscale serve`) qua `TEAM_UI_HOSTS=a,b`. Mọi response có CSP `default-src 'self'` và `nosniff`.
 - File tĩnh: `realpath` phải nằm trong `ui/dist/`. Bỏ whitelist ảnh cũ.
 - `projects/` dùng `TEAM_PROJECTS` như `bin/team` (để test được bằng thư mục tạm).
 
