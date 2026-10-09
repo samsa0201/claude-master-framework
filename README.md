@@ -1,6 +1,6 @@
 # studio
 Claude session as entry point (product lead), coding-agent workers (opencode by default) running custom models in tmux panes, products in `projects/`.
-Setup: `./install.sh` (installs opencode/goose under `.runtime/`), `export NINEROUTER_API_KEY=...` in the shell that runs `claude`, then `claude` in this dir.
+Setup: `./install.sh` (installs opencode/goose under `.runtime/`), put `NINEROUTER_API_KEY=...` in `.env` (gitignored, chmod 600) and load it in your shell (fish: `~/.config/fish/conf.d/studio.fish`, bash: `set -a; . ~/dev/studio/.env; set +a` in `~/.bashrc`), then `claude` in this dir.
 Commands: `team new|attach|assign|wait|ls|close|display|ui` (see bin/team). Tests: `tests/team_test.sh`, `tests/runtime-accept.sh <runtime> <model>`.
 
 ## Worker runtime: vì sao chọn opencode (POC 2026-10-09)

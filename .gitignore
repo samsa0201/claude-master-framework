@@ -4,3 +4,6 @@ models.yml
 .playwright-mcp/
 magisk-poc.png
 .runtime/
+runtime-home/xdg/*
+!runtime-home/xdg/.gitkeep
+__pycache__/
