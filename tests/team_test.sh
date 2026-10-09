@@ -75,5 +75,13 @@ check "opencode cmd uses 9r provider + prompt" bash -c "
   ROOT='$R' d=/tmp/p role=dev model=fidt/kCode browser=none msg=m
   source '$R/agents/runtime/opencode.sh'; rt_cmd | grep -q -- \"-m 9r/fidt/kCode --prompt 'm'\""
 check "opencode.json is valid JSON" python3 -c "import json; json.load(open('$R/runtime-home/opencode.json'))"
+check "opencode env isolates XDG dirs" bash -c "
+  ROOT='$R' d=/tmp/p role=dev model=m browser=none msg=m NINEROUTER_API_KEY=k
+  source '$R/agents/runtime/opencode.sh'; e=\$(rt_env)
+  grep -qx \"XDG_CONFIG_HOME=$R/runtime-home/xdg\" <<<\"\$e\" && grep -qx \"XDG_DATA_HOME=$R/.runtime/data\" <<<\"\$e\""
+check "opencode env NINEROUTER_URL default + override" bash -c "
+  ROOT='$R' d=/tmp/p role=dev model=m browser=none msg=m NINEROUTER_API_KEY=k
+  source '$R/agents/runtime/opencode.sh'; rt_env | grep -qx NINEROUTER_URL=http://localhost:20128/v1
+  NINEROUTER_URL=http://x:1/v1; source '$R/agents/runtime/opencode.sh'; rt_env | grep -qx NINEROUTER_URL=http://x:1/v1"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

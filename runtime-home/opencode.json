@@ -6,7 +6,7 @@
     "9r": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "9router",
-      "options": { "baseURL": "http://localhost:20128/v1", "apiKey": "{env:NINEROUTER_API_KEY}" },
+      "options": { "baseURL": "{env:NINEROUTER_URL}", "apiKey": "{env:NINEROUTER_API_KEY}" },
       "models": {
         "fidt/qwen3.8-flash": { "name": "qwen3.8-flash" },
         "fidt/kCode": { "name": "kCode" }

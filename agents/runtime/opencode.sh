@@ -10,6 +10,9 @@ rt_preflight() {   # key check first: it is the most common failure and needs no
 rt_env() {
   echo "OPENCODE_CONFIG=$ROOT/runtime-home/opencode.json"
   echo "NINEROUTER_API_KEY=$NINEROUTER_API_KEY"
+  echo "NINEROUTER_URL=$NR"
+  echo "XDG_CONFIG_HOME=$ROOT/runtime-home/xdg"
+  echo "XDG_DATA_HOME=$ROOT/.runtime/data"
   echo "OPENCODE_CONFIG_CONTENT={\"instructions\":[\"$d/.team/role-$role.md\"]}"
 }
 rt_cmd() { echo "$OC -m 9r/$model --prompt '$msg'"; }
