@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--model <id>] [--new] | wait <id> [secs] | ls | close <proj> [role] | ui [port]
-# Workers = omp in tmux PANES of the window you run claude in (tagged @team=<proj>-<role>).
+# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] | wait <id> [secs] | ls | close <proj> [role] | ui [port]
+# Workers = a coding-agent CLI (adapter agents/runtime/<R>.sh, default opencode) in tmux PANES of the window you run claude in (tagged @team=<proj>-<role>).
 set -euo pipefail
 ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
-P() { echo "$ROOT/projects/$1"; }
+PROJ=${TEAM_PROJECTS:-$ROOT/projects}
+P() { echo "$PROJ/$1"; }
+die() { echo "$*" >&2; exit 1; }
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v n="$1" '$2==n{print $1}' | head -1; }
 # header: pane border shows "role | status task"; window-local, user's global tmux config untouched
 header() { # <pane> <id> <icon> <task text>
@@ -22,16 +24,24 @@ attach) # existing repo: isolated git worktree on a new branch, main checkout un
   printf '.team/\ndocs/feature*.md\n' >> "$(git -C "$d" rev-parse --git-path info/exclude)"  # keep studio files out of their diff
   echo "$d" ;;
 assign)
-  proj=$1 role=$2 task=$3; shift 3; d=$(P "$proj"); mopt= newp=
-  while [ $# -gt 0 ]; do case $1 in --model) mopt=$2; shift 2 ;; --new) newp=1; shift ;; *) echo "unknown flag $1" >&2; exit 1 ;; esac; done
-  [[ $role =~ ^[a-z][a-z0-9-]*$ ]] || { echo "role must be lowercase-with-dashes (e.g. backend-dev)" >&2; exit 1; }
+  proj=$1 role=$2 task=$3; shift 3; d=$(P "$proj"); ropt= mopt= newp=
+  while [ $# -gt 0 ]; do case $1 in --runtime) ropt=$2; shift 2 ;; --model) mopt=$2; shift 2 ;; --new) newp=1; shift ;; *) die "unknown flag $1" ;; esac; done
+  [[ $role =~ ^[a-z][a-z0-9-]*$ ]] || die "role must be lowercase-with-dashes (e.g. dev-fe)"
+  [ -d "$d" ] || die "no project: $d"
   id="$proj-$role-$(date +%H%M%S)"
   n=2; while [ -e "$d/.team/tasks/$id.md" ]; do id="${id%-[0-9]}-$n"; n=$((n+1)); done   # same-second assigns must not overwrite each other's task
   a="$ROOT/agents/$role.md"; [ -f "$a" ] || a="$ROOT/agents/_base.md"   # any role name works; unknown ones use _base
-  model=${mopt:-$(sed -n 's/^model: //p' "$a" | head -1)}   # --model overrides the role's default
+  runtime=${ropt:-opencode}
+  model=${mopt:-fidt/qwen3.8-flash}
+  browser=none
+  rt="$ROOT/agents/runtime/$runtime.sh"; [ -f "$rt" ] || die "unknown runtime: $runtime (see agents/runtime/)"
+  msg="Read .team/tasks/$id.md and do it exactly."
+  source "$rt"; rt_preflight
   awk '/^---$/{c++;next} c>=2' "$a" > "$d/.team/role-$role.md"
+  tag="$proj-$role"; pane=$(pane_of "$tag")
+  [ -n "$newp" ] && { n=2; while [ -n "$(pane_of "$tag-$n")" ]; do n=$((n+1)); done; tag="$tag-$n"; pane=; }   # --new: extra parallel worker
   cat > "$d/.team/tasks/$id.md" <<T
-# Task $id (role: $role)
+# Task $id (role: $role) (worker: ${tag#$proj-})
 You are acting as: $role.
 $task
 
@@ -39,15 +49,14 @@ $task
 1. Write your result summary to .team/out/$id.md
 2. Then run: touch .team/out/$id.done
 T
-  msg="Read .team/tasks/$id.md and do it exactly."; title=$(head -1 <<<"$task")
-  tag="$proj-$role"; pane=$(pane_of "$tag")
-  [ -n "$newp" ] && { n=2; while [ -n "$(pane_of "$tag-$n")" ]; do n=$((n+1)); done; tag="$tag-$n"; pane=; }   # --new: extra parallel worker
+  title=$(head -1 <<<"$task")
   if [ -n "$pane" ]; then   # reuse live worker: follow-up message
     tmux send-keys -t "$pane" -l "$msg"; sleep 0.3; tmux send-keys -t "$pane" Enter
     header "$pane" "$id" "⏳" "$title"
-  else                      # first message goes in as omp's argument: no startup race
-    pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" \
-      "omp --model $model --append-system-prompt .team/role-$role.md '$msg'; read -p 'omp exited, enter to close'")
+  else                      # first message goes in as the agent's argument: no startup race
+    envs=(); while IFS= read -r kv; do [ -n "$kv" ] && envs+=(-e "$kv"); done < <(rt_env)
+    pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" "${envs[@]}" \
+      "$(rt_cmd); tmux set-option -p @dead 1; read -p 'worker exited, enter to close'")
     tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"
     tmux set-option -w -t "$pane" pane-border-status top
     tmux set-option -w -t "$pane" pane-border-format \
@@ -55,9 +64,9 @@ T
     tmux select-layout -t "$pane" main-vertical   # claude stays big on the left, workers stacked right
   fi
   echo "$id" ;;
-wait)  f=$(ls "$ROOT"/projects/*/.team/out/"$1".done 2>/dev/null | head -1 || true)
+wait)  f=$(ls "$PROJ"/*/.team/out/"$1".done 2>/dev/null | head -1 || true)
   for ((i=0; i<${2:-600}; i++)); do
-    f=$(ls "$ROOT"/projects/*/.team/out/"$1".done 2>/dev/null | head -1 || true)
+    f=$(ls "$PROJ"/*/.team/out/"$1".done 2>/dev/null | head -1 || true)
     [ -n "$f" ] && { pn=$(tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$1" '$2==i{print $1}'); \
       [ -n "$pn" ] && { t=$(tmux show-option -pqv -t "$pn" @task); header "$pn" "$1" "✓" "${t#* }"; }; echo done; exit 0; }; sleep 1
   done; echo timeout >&2; exit 1 ;;

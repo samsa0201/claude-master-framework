@@ -1,0 +1,3 @@
+#!/bin/sh
+# Tests only: every tmux call goes to the private server "studio-test".
+exec "$TEAM_REAL_TMUX" -L studio-test "$@"
