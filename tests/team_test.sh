@@ -43,5 +43,27 @@ id=$("$T" assign p2 writer "x" --runtime fake); waits "$id" >/dev/null
 check "unknown role -> _base" grep -q "described in the task file" "$TEAM_PROJECTS/p2/.team/out/$id.md"
 check "no frontmatter leaks into prompt" bash -c "! grep -q '^model:' '$TEAM_PROJECTS/p2/.team/out/$id.md'"
 check "flex without frontmatter is whole body" bash -c "printf 'PLAIN-FLEX\n' > '$TEAM_PROJECTS/p2/.team/roles/docs.md'; i=\$('$T' assign p2 docs x --runtime fake); '$T' wait \$i 20 >/dev/null; grep -q PLAIN-FLEX '$TEAM_PROJECTS/p2/.team/out/'\$i.md"
+"$T" new p3 >/dev/null
+id=$("$T" assign p3 dev "FAKE_DIE" --runtime fake)
+r=$("$T" wait "$id" 20); rc=$?
+check "crashed worker -> dead" test "$r/$rc" = "dead/2"
+id=$("$T" assign p3 qc "FAKE_HANG" --runtime fake)
+r=$("$T" wait "$id" 2); rc=$?
+check "hung worker -> timeout" test "$r/$rc" = "timeout/1"
+pn=$(tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$id" '$2==i{print $1}')
+check "qwen default timeout 900" test "$(tmux show-option -pqv -t "$pn" @timeout)" = 900
+id=$("$T" assign p3 docs "FAKE_HANG" --runtime fake --model fidt/kCode)
+pn=$(tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$id" '$2==i{print $1}')
+check "kCode default timeout 1800" test "$(tmux show-option -pqv -t "$pn" @timeout)" = 1800
+id=$("$T" assign p3 dev-x "a" --runtime fake); waits "$id" >/dev/null
+nt=$(ls "$TEAM_PROJECTS/p3/.team/tasks" | wc -l)
+msg=$("$T" assign p3 dev-x "b" --runtime fake --model fidt/other 2>&1)
+check "reuse with different model refused" bash -c '[[ "$1" == *"use --new or"* ]]' _ "$msg"
+check "refused assign wrote no task" test "$(ls "$TEAM_PROJECTS/p3/.team/tasks" | wc -l)" = "$nt"
+id=$("$T" assign p3 dev-x "b" --runtime fake --model fidt/other --new)
+check "--new allows other model" test "$(waits "$id")" = done
+printf 'notes\n---\nmodel: fidt/bad\n' > "$TEAM_PROJECTS/p3/.team/roles/qd.md"
+id=$("$T" assign p3 qd "x" --runtime fake); waits "$id" >/dev/null
+check "fm ignores non-frontmatter ---" bash -c "! grep -q 'model=fidt/bad' '$TEAM_PROJECTS/p3/.team/out/$id.md'"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

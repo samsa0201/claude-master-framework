@@ -6,7 +6,7 @@ ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
 PROJ=${TEAM_PROJECTS:-$ROOT/projects}
 P() { echo "$PROJ/$1"; }
 die() { echo "$*" >&2; exit 1; }
-fm() { awk -v k="$2" '/^---$/{c++;next} c==1 && index($0,k": ")==1{print substr($0,length(k)+3); exit}' "$1" 2>/dev/null; }   # frontmatter value
+fm() { awk -v k="$2" 'NR==1&&$0!="---"{exit} /^---$/{c++;next} c==1 && index($0,k": ")==1{print substr($0,length(k)+3); exit}' "$1" 2>/dev/null; }   # frontmatter value
 body() { awk 'NR==1&&$0!="---"{c=2} /^---$/&&c<2{c++;next} c>=2' "$1"; }   # text after frontmatter (whole file if none)
 base_of() { local r=$1; while :; do [ -f "$ROOT/agents/$r.md" ] && { echo "$ROOT/agents/$r.md"; return; }; [[ $r == *-* ]] || break; r=${r%-*}; done; echo "$ROOT/agents/_base.md"; }   # dev-fe -> dev.md
 pick() { local v=$2; [ -n "$v" ] || v=$(fm "$flex" "$1"); [ -n "$v" ] || v=$(fm "$a" "$1"); echo "${v:-$3}"; }   # flag > flex > base > default
@@ -38,12 +38,16 @@ assign)
   runtime=$(pick runtime "$ropt" opencode)
   model=$(pick model "$mopt" fidt/qwen3.8-flash)
   browser=$(pick browser "" none)
+  case $model in *kCode*) dt=1800 ;; *) dt=900 ;; esac   # kCode upstream can queue 100-200s per request
+  timeout=$(pick timeout "" $dt)
   rt="$ROOT/agents/runtime/$runtime.sh"; [ -f "$rt" ] || die "unknown runtime: $runtime (see agents/runtime/)"
   msg="Read .team/tasks/$id.md and do it exactly."
   source "$rt"; rt_preflight
   { body "$a"; [ -f "$flex" ] && { printf '\n## Project notes (from lead)\n'; body "$flex"; }; } > "$d/.team/role-$role.md"
   tag="$proj-$role"; pane=$(pane_of "$tag")
   [ -n "$newp" ] && { n=2; while [ -n "$(pane_of "$tag-$n")" ]; do n=$((n+1)); done; tag="$tag-$n"; pane=; }   # --new: extra parallel worker
+  [ -z "$pane" ] || { pr=$(tmux show-option -pqv -t "$pane" @runtime); pm=$(tmux show-option -pqv -t "$pane" @model)
+    [ "$pr/$pm" = "$runtime/$model" ] || die "worker $tag runs $pr/$pm; use --new or 'team close $proj $role' to switch"; }
   cat > "$d/.team/tasks/$id.md" <<T
 # Task $id (role: $role) (worker: ${tag#$proj-})
 You are acting as: $role.
@@ -57,23 +61,34 @@ T
   if [ -n "$pane" ]; then   # reuse live worker: follow-up message
     tmux send-keys -t "$pane" -l "$msg"; sleep 0.3; tmux send-keys -t "$pane" Enter
     header "$pane" "$id" "⏳" "$title"
+    tmux set-option -p -t "$pane" @timeout "$timeout"
   else                      # first message goes in as the agent's argument: no startup race
     envs=(); while IFS= read -r kv; do [ -n "$kv" ] && envs+=(-e "$kv"); done < <(rt_env)
     pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" "${envs[@]}" \
-      "$(rt_cmd); tmux set-option -p @dead 1; read -p 'worker exited, enter to close'")
+      "$(rt_cmd); tmux set-option -p -t \"\$TMUX_PANE\" @dead 1; read -p 'worker exited, enter to close'")
     tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"
+    tmux set-option -p -t "$pane" @timeout "$timeout"; tmux set-option -p -t "$pane" @runtime "$runtime"; tmux set-option -p -t "$pane" @model "$model"
     tmux set-option -w -t "$pane" pane-border-status top
     tmux set-option -w -t "$pane" pane-border-format \
       ' #{?#{@team},#[bold]#{@team}#[nobold] │ #{@task},claude (lead)} '
     tmux select-layout -t "$pane" main-vertical   # claude stays big on the left, workers stacked right
   fi
   echo "$id" ;;
-wait)  f=$(ls "$PROJ"/*/.team/out/"$1".done 2>/dev/null | head -1 || true)
-  for ((i=0; i<${2:-600}; i++)); do
+wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone without .done
+  pn() { tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$1" '$2==i{print $1}' | head -1; }
+  p=$(pn "$1"); lim=${2:-}
+  [ -n "$lim" ] || { [ -n "$p" ] && lim=$(tmux show-option -pqv -t "$p" @timeout); }   # inside || so set -e ignores an empty p
+  lim=${lim:-900}
+  for ((i=0; i<lim; i++)); do
     f=$(ls "$PROJ"/*/.team/out/"$1".done 2>/dev/null | head -1 || true)
-    [ -n "$f" ] && { pn=$(tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$1" '$2==i{print $1}'); \
-      [ -n "$pn" ] && { t=$(tmux show-option -pqv -t "$pn" @task); header "$pn" "$1" "✓" "${t#* }"; }; echo done; exit 0; }; sleep 1
-  done; echo timeout >&2; exit 1 ;;
+    if [ -n "$f" ]; then
+      p=$(pn "$1"); [ -n "$p" ] && { t=$(tmux show-option -pqv -t "$p" @task); header "$p" "$1" "✓" "${t#* }"; }
+      echo done; exit 0
+    fi
+    p=$(pn "$1")
+    if [ -z "$p" ] || [ "$(tmux show-option -pqv -t "$p" @dead)" = 1 ]; then echo dead; exit 2; fi
+    sleep 1
+  done; echo timeout; exit 1 ;;
 ui)    exec python3 "$ROOT/ui/serve.py" "${1:-7777}" ;;   # cute live office view of all projects
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;
 close) tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$1${2:+-$2}" 'index($2,p)==1{print $1}' | xargs -r -n1 tmux kill-pane -t ;;
