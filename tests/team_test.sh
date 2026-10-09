@@ -101,5 +101,13 @@ check "opencode browser env adds playwright MCP on display" bash -c "
 check "missing chromium aborts browser assign before spawning" bash -c "
   o=\$(TEAM_PW_CACHE=/nonexistent TEAM_OPENCODE=/bin/true NINEROUTER_API_KEY=k '$T' assign p6 qa x 2>&1); rc=\$?
   [ \$rc -ne 0 ] && grep -q 'no Playwright chromium' <<<\"\$o\" && ! '$T' ls | grep -q ' p6-qa\$'"
+check "goose refuses browser roles" bash -c "NINEROUTER_API_KEY=k '$T' assign p1 qa x --runtime goose 2>&1 | grep -q 'no browser'"
+check "goose cmd: interactive, system prompt from role file, anti-loop" bash -c "
+  ROOT='$R' d=/tmp/p role=dev model=fidt/qwen3.8-flash browser=none msg=m
+  source '$R/agents/runtime/goose.sh'; c=\$(rt_cmd); [[ \$c == *' run -s '* && \$c == *'role-dev.md'* && \$c == *'--max-tool-repetitions 5'* && \$c == *\"-t 'm'\"* ]]"
+check "goose env isolates config/data/state" bash -c "
+  ROOT='$R' d=/tmp/p role=dev browser=none NINEROUTER_API_KEY=k
+  source '$R/agents/runtime/goose.sh'; e=\$(rt_env)
+  grep -qx \"XDG_CONFIG_HOME=$R/runtime-home/goose\" <<<\"\$e\" && grep -qx \"XDG_DATA_HOME=$R/.runtime/data\" <<<\"\$e\" && grep -qx \"XDG_STATE_HOME=$R/.runtime/state\" <<<\"\$e\""
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

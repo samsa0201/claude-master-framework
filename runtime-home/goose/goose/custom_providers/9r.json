@@ -1,0 +1,1 @@
+{"name":"9r","engine":"openai","display_name":"9router","description":"9router","api_key_env":"NINEROUTER_API_KEY","base_url":"http://localhost:20128/v1/chat/completions","models":[{"name":"fidt/qwen3.8-flash","context_limit":128000},{"name":"fidt/kCode","context_limit":128000}],"supports_streaming":true}

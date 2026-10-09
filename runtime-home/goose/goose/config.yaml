@@ -1,0 +1,10 @@
+GOOSE_PROVIDER: 9r
+GOOSE_MODEL: fidt/qwen3.8-flash
+GOOSE_MODE: auto
+GOOSE_TELEMETRY_ENABLED: false
+extensions:
+  developer:
+    enabled: true
+    name: developer
+    type: builtin
+    timeout: 300
