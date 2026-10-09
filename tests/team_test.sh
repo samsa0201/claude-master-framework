@@ -115,5 +115,12 @@ check "dead worker reported dead" test "$(waits "$id")" = dead
 id=$("$T" assign p7 dev "ok" --runtime fake)
 check "assign to dead pane respawns -> done" test "$(waits "$id")" = done
 check "exactly one p7-dev pane" test "$("$T" ls | grep -c ' p7-dev$')" = 1
+"$T" new p8 >/dev/null
+id=$(FAKE_ONESHOT=1 "$T" assign p8 dev "FAKE_HANG" --runtime fake)
+check "busy one-shot worker refused" bash -c "o=\$(FAKE_ONESHOT=1 '$T' assign p8 dev x --runtime fake 2>&1); [ \$? -ne 0 ] && grep -q busy <<<\"\$o\""
+touch "$TEAM_PROJECTS/p8/.team/out/$id.done"
+id=$(FAKE_ONESHOT=1 "$T" assign p8 dev "ok" --runtime fake)
+check "finished one-shot worker respawned -> done" test "$(waits "$id")" = done
+check "exactly one p8-dev pane" test "$("$T" ls | grep -c ' p8-dev$')" = 1
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
