@@ -86,7 +86,8 @@ T
     tmux set-option -p -t "$pane" @timeout "$timeout"
     [ "$browser" != none ] && tmux set-option -p -t "$pane" @browser 1
   else                      # first message goes in as the agent's argument: no startup race
-    envs=(); while IFS= read -r kv; do [ -n "$kv" ] && envs+=(-e "$kv"); done < <(rt_env)
+    kvs=$(rt_env) || exit 1   # not via process substitution: adapter failures must abort
+    envs=(); while IFS= read -r kv; do [ -n "$kv" ] && envs+=(-e "$kv"); done <<<"$kvs"
     pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" "${envs[@]}" \
       "$(rt_cmd); tmux set-option -p -t \"\$TMUX_PANE\" @dead 1; read -p 'worker exited, enter to close'")
     tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"

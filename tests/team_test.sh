@@ -87,7 +87,7 @@ check "opencode env NINEROUTER_URL default + override" bash -c "
 id=$("$T" assign p5 qa "FAKE_HANG" --runtime fake)
 check "browser role starts Xvfb on test display" bash -c "pgrep -a -x Xvfb | grep -q ' $TEAM_DISPLAY '"
 check "noVNC web port listens on localhost" bash -c "ss -ltn | grep -q '127.0.0.1:$TEAM_WEB_PORT'"
-check "second browser worker refused while busy" bash -c "! '$T' assign p5 qa-2 x --runtime fake 2>&1"
+check "second browser worker refused while busy" bash -c "o=\$('$T' assign p5 qa-2 x --runtime fake 2>&1); [ \$? -ne 0 ] && grep -q busy <<<\"\$o\""
 check "non-browser role not blocked" bash -c "i=\$('$T' assign p5 pm x --runtime fake) && '$T' wait \$i 20 | grep -q done"
 "$T" close p5 qa >/dev/null
 check "lock released after close" bash -c "i=\$('$T' assign p5 qa-3 x --runtime fake) && '$T' wait \$i 20 | grep -q done"
@@ -97,5 +97,9 @@ check "opencode browser env adds playwright MCP on display" bash -c "
   ROOT='$R' d=/tmp/p role=qa model=fidt/qwen3.8-flash browser=qa msg=m NINEROUTER_API_KEY=k TEAM_DISPLAY=:97
   source '$R/agents/runtime/opencode.sh'
   rt_env | sed -n 's/^OPENCODE_CONFIG_CONTENT=//p' | python3 -c 'import json,sys; m=json.load(sys.stdin)[\"mcp\"][\"playwright\"]; assert m[\"environment\"][\"DISPLAY\"]==\":97\" and \"/tmp/p/.team/out/browser\" in m[\"command\"]'"
+"$T" new p6 >/dev/null
+check "missing chromium aborts browser assign before spawning" bash -c "
+  o=\$(TEAM_PW_CACHE=/nonexistent TEAM_OPENCODE=/bin/true NINEROUTER_API_KEY=k '$T' assign p6 qa x 2>&1); rc=\$?
+  [ \$rc -ne 0 ] && grep -q 'no Playwright chromium' <<<\"\$o\" && ! '$T' ls | grep -q ' p6-qa\$'"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
