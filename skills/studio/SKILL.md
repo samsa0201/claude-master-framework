@@ -1,19 +1,21 @@
 ---
 name: studio
-description: Run the studio multi-agent workflow (Claude as product lead/architect, omp workers in tmux panes via the `team` CLI) to build a new product or add a feature to an existing repo. Use when the user wants to start a product, assign pm/ux/dev/qa workers, or attach a worktree to a repo.
+description: Run the studio multi-agent workflow (Claude as product lead/architect, coding-agent workers (opencode via adapters) in tmux panes via the `team` CLI) to build a new product or add a feature to an existing repo. Use when the user wants to start a product, assign pm/ux/dev/qa workers, or attach a worktree to a repo.
 ---
 # Studio — entry point
 
 Studio root = `dirname $(dirname $(readlink -f $(which team)))` (call it $STUDIO_ROOT). Paths below like `agents/`, `projects/` are relative to it; run `team` from anywhere inside tmux.
 
-You (Claude) are **product lead + architect**. omp workers (model `9router/fidt/qwen3.8-flash`) default to pm, ux, web-dev, android-dev, qa (`agents/<role>.md`). Roles are flexible: you may assign ANY role name (e.g. backend-dev, security, docs); without an agent file it uses `agents/_base.md`, so put the role's responsibility, files and done criteria in the task. Role names: lowercase-with-dashes (enforced by `team assign`). Add an `agents/<role>.md` only when a role recurs. Workers run as tmux PANES next to this one (tag `@team=<project>-<role>`), so the user watches live (`Ctrl-b z` zooms one).
+You (Claude) are **product lead + architect**; the user only talks to you. Workers are coding-agent CLIs (runtime adapter `agents/runtime/<R>.sh`, default `opencode`, fallback `goose`) running custom models via 9router, as tmux PANES next to this one (tag `@team=<project>-<role>`) so the user watches live (`Ctrl-b z` zooms one). Treat them like sub-agents: small self-contained task in, result file out, then YOU verify (diff + tests) — never trust a worker's "done".
+Roles (`agents/<role>.md`, base prompt + defaults): `pm`, `ux`, `dev` (TDD), `qa` (runs things, drives a real browser), `qc` (reviews diff, no edits), `docs` (no code edits). Any role name works; base = longest matching prefix (`dev-fe` → `dev.md`), else `_base.md`.
+**Flex:** when a project starts (or after `team attach`), write `projects/<name>/.team/roles/<role-name>.md` per worker you will use: stack, build/test/lint commands, conventions, key files, specialty. Optional frontmatter `runtime:`, `model:`, `browser:`, `timeout:` overrides the base. Example `dev-fe.md` with `model: fidt/kCode`.
 
 ## Flow (per product)
 1. `team new <name>`; put the user's idea in `projects/<name>/docs/idea.md`.
 2. `team assign <name> pm "..."` → docs/prd.md. Then you write docs/architecture.md yourself (web PWA vs Android, stack, data model, slices). Then `team assign <name> ux "..."`.
 3. **STOP: user approves PRD + architecture + UX before any code.**
-4. One vertical slice at a time: `team assign <name> web-dev|android-dev "<slice>"`, then `team qa`-style `team assign <name> qa "verify <slice>"`.
-5. For each assign: run `team wait <id> [secs]` in background (polls a .done file; safe to repeat) (Bash run_in_background), then read `projects/<name>/.team/out/<id>.md` and review the diff yourself before the next step.
+4. One vertical slice at a time: `team assign <name> dev-<x> "<slice>"`, then `team assign <name> qc "review <slice>"`, then `team assign <name> qa "verify <slice>"`.
+5. For each assign: run `team wait <id>` in background (Bash run_in_background; default timeout = role/model timeout). Output `done` → read `projects/<name>/.team/out/<id>.md` and review the diff yourself; `timeout` → `tmux capture-pane` the worker, then nudge it, `team close` + reassign, or switch `--runtime/--model`; `dead` → the worker exited, read its pane and reassign.
 
 ## Flow (feature in an existing repo)
 1. `team attach <name> <repo-path> [branch]` → worktree `projects/<name>` on branch `feat/<name>`; the user's checkout stays untouched. Run install/setup (deps, .env) there.
@@ -22,17 +24,25 @@ You (Claude) are **product lead + architect**. omp workers (model `9router/fidt/
 4. Slices as in the main flow (tasks name exact existing files; tell workers to match surrounding style and not refactor). Review each diff with `git -C projects/<name> diff`; QA runs the repo's existing tests.
 5. Finish: user decides merge/PR; then `git worktree remove projects/<name>`.
 
-## Choosing model / parallel workers (you decide; ask the user only if cost is unclear)
-`team assign <name> <role> "<task>" [--model <id>] [--new]`
-- Default `9router/fidt/qwen3.8-flash` (cheap, routine slices). `--model 9router/fidt/deepseek-v4.1-flash` for harder reasoning (architecture-heavy, security, tricky debugging). `--model 9router/fidt/kCode` for coding-heavy slices (web-dev/android-dev/backend). Models available: `~/.omp/agent/models.yml`.
-- `--new` spawns an extra parallel worker (`<role>-2`, ...) instead of reusing the live pane. Reuse (default) keeps context; use `--new` for independent work or a fresh context.
+## Choosing runtime / model / parallel workers (you decide; ask the user only if cost is unclear)
+`team assign <name> <role> "<task>" [--runtime opencode|goose] [--model <id>] [--new]`
+- Models (9router ids): `fidt/qwen3.8-flash` (default; logic, backend, docs, review), `fidt/kCode` (UI/frontend; upstream is slow, default timeout 30 min). Put per-worker defaults in the flex file instead of repeating flags.
+- Runtime: `opencode` (default; only one with browser support). `goose` as fallback when opencode misbehaves on a task; it runs one task per process (pane respawned per task, no context kept; assigning to a busy goose worker is refused, use `--new`). Why: README "Worker runtime".
+- Reusing a live worker with a different `--runtime/--model` is refused: use `--new` or `team close`. A worker whose process exited is respawned automatically.
+- `--new` spawns an extra parallel worker (`<role>-2`, ...). Reuse (default) keeps context.
+- Preflight: `team assign` refuses if `NINEROUTER_API_KEY` is unset in your shell or 9router is down.
+- New runtime/model? Run `tests/runtime-accept.sh <runtime> <model>` first.
 
 ## Rules
-- Never read or print API keys. Key lives in `NINEROUTER_API_KEY` / `~/.omp/agent/models.yml`.
+- Never read or print API keys. Key lives only in the `NINEROUTER_API_KEY` env var of the shell running claude (passed into worker panes by `team`).
 - Each product is its own git repo under `projects/` (gitignored here). Improve the framework by editing `agents/`, `bin/team`, this file; commit here.
 - Only touch tmux panes tagged `@team`. Use `team ls`, `team close <name> [role]`.
-- Keep tasks small and self-contained; workers are cheap models and need explicit file paths + done criteria.
+- Keep tasks small and self-contained; workers run cheap models and need explicit file paths + done criteria.
+- Framework tests: `tests/team_test.sh` (no model, private tmux server) after editing `bin/team` or adapters.
 - `team ui [port]` (default 7777): cute live "office" view (bots walk to you for tasks, type, cheer when done). Suggest it to the user when work starts.
+
+## QA in a real browser the user can watch
+Roles with `browser: qa` (default for `qa`) get Playwright MCP driving Chromium on a shared virtual display. `team assign` starts it and prints the URL; tell the user: `ssh -L 6080:localhost:6080 <linux-host>`, open `http://localhost:6080/vnc.html`, Connect. One browser worker at a time (assign refuses while one is busy). Evidence (screenshots, session) lands in `projects/<name>/.team/out/browser/`. Login: put the storageState file at `projects/<name>/.team/auth.json` (flow below) and the QA browser starts logged in. `team display stop` when done. Browser tasks must say "use the playwright browser tools" (qwen only uses MCP when told).
 
 ## Browser login over SSH (user works from a Mac via SSH, no display on this Linux box)
 Headed browsers (e.g. `bun run test:e2e:login`) are invisible to the user. Instead:
