@@ -20,6 +20,10 @@
     "doom_loop": "deny",
     "bash": {
       "*": "allow",
+      "tmux*": "deny",
+      "*tmux *": "deny",
+      "team *": "deny",
+      "*bin/team*": "deny",
       "git push*": "deny",
       "git remote*": "deny",
       "git config*": "deny",

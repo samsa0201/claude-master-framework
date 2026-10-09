@@ -15,6 +15,8 @@ rt_env() {
   echo "NINEROUTER_URL=$NR"
   echo "XDG_CONFIG_HOME=$ROOT/runtime-home/xdg"
   echo "XDG_DATA_HOME=$ROOT/.runtime/data"
+  echo "OPENCODE_DISABLE_CLAUDE_CODE=1"   # opencode otherwise reads ~/.claude/CLAUDE.md + skills
+  echo "OPENCODE_DISABLE_EXTERNAL_SKILLS=1"
   local mcp='' chrome st=''
   if [ "$browser" != none ]; then
     chrome=$(pw_chrome)

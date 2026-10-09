@@ -122,5 +122,26 @@ touch "$TEAM_PROJECTS/p8/.team/out/$id.done"
 id=$(FAKE_ONESHOT=1 "$T" assign p8 dev "ok" --runtime fake)
 check "finished one-shot worker respawned -> done" test "$(waits "$id")" = done
 check "exactly one p8-dev pane" test "$("$T" ls | grep -c ' p8-dev$')" = 1
+check "opencode env disables ~/.claude + external skills" bash -c "
+  ROOT='$R' d=/tmp/p role=dev model=m browser=none msg=m NINEROUTER_API_KEY=k
+  source '$R/agents/runtime/opencode.sh'; e=\$(rt_env)
+  grep -qx OPENCODE_DISABLE_CLAUDE_CODE=1 <<<\"\$e\" && grep -qx OPENCODE_DISABLE_EXTERNAL_SKILLS=1 <<<\"\$e\""
+check "opencode.json denies tmux/team" python3 -c "
+import json; b=json.load(open('$R/runtime-home/opencode.json'))['permission']['bash']
+assert all(b[k]=='deny' for k in ['tmux*','*tmux *','team *','*bin/team*'])"
+"$T" new cx >/dev/null; "$T" new cxy >/dev/null
+for r in dev dev-fe; do waits "$("$T" assign cx $r "FAKE_HANG" --runtime fake)" 1 >/dev/null; done
+waits "$("$T" assign cx dev "FAKE_HANG" --runtime fake --new)" 1 >/dev/null
+waits "$("$T" assign cxy dev "FAKE_HANG" --runtime fake)" 1 >/dev/null
+"$T" close cx dev
+check "close cx dev: exact + numbered only" bash -c "l=\$('$T' ls); grep -q ' cx-dev-fe\$' <<<\"\$l\" && grep -q ' cxy-dev\$' <<<\"\$l\" && ! grep -qE ' cx-dev(-2)?\$' <<<\"\$l\""
+"$T" close cx
+check "close cx: all cx-*, not cxy" bash -c "l=\$('$T' ls); ! grep -q ' cx-' <<<\"\$l\" && grep -q ' cxy-dev\$' <<<\"\$l\""
+"$T" new gx >/dev/null
+check "new excludes .team from git" git -C "$TEAM_PROJECTS/gx" check-ignore -q .team/auth.json
+"$T" new w1 >/dev/null
+ida=$("$T" assign w1 dev "FAKE_HANG" --runtime fake); sleep 1
+idb=$("$T" assign w1 dev "FAKE_HANG" --runtime fake)
+check "wait on superseded id in live pane -> timeout" test "$(waits "$ida" 3)" = timeout
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

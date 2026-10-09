@@ -15,7 +15,7 @@ Roles (`agents/<role>.md`, base prompt + defaults): `pm`, `ux`, `dev` (TDD), `qa
 2. `team assign <name> pm "..."` → docs/prd.md. Then you write docs/architecture.md yourself (web PWA vs Android, stack, data model, slices). Then `team assign <name> ux "..."`.
 3. **STOP: user approves PRD + architecture + UX before any code.**
 4. One vertical slice at a time: `team assign <name> dev-<x> "<slice>"`, then `team assign <name> qc "review <slice>"`, then `team assign <name> qa "verify <slice>"`.
-5. For each assign: run `team wait <id>` in background (Bash run_in_background; default timeout = role/model timeout). Output `done` → read `projects/<name>/.team/out/<id>.md` and review the diff yourself; `timeout` → `tmux capture-pane` the worker, then nudge it, `team close` + reassign, or switch `--runtime/--model`; `dead` → the worker exited, read its pane and reassign.
+5. For each assign: run `team wait <id>` in background (Bash run_in_background; default timeout = role/model timeout). Output `done` → read `projects/<name>/.team/out/<id>.md` and review the diff yourself; `timeout` → `tmux capture-pane` the worker, then nudge it, `team close` + reassign, or switch `--runtime/--model`; `dead` → the worker exited or its pane is gone, read its pane and reassign.
 
 ## Flow (feature in an existing repo)
 1. `team attach <name> <repo-path> [branch]` → worktree `projects/<name>` on branch `feat/<name>`; the user's checkout stays untouched. Run install/setup (deps, .env) there.

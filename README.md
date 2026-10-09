@@ -25,3 +25,6 @@ Lưu ý rút ra:
 Trạng thái: đã triển khai (adapter `agents/runtime/opencode.sh`, dự phòng `goose.sh`). Kết quả `tests/runtime-accept.sh` (opencode): qwen3.8-flash 4/4 PASS với grader chặt (commit 4421bc8); kCode 4/4 PASS (commit e5af3ef, grader lỏng hơn, ~14 phút).
 Cô lập: worker opencode/goose dùng thư mục XDG config/data riêng của studio (`runtime-home/`, `.runtime/`), không đụng `~/.config` của người dùng.
 Chromium của QA chạy với `--no-sandbox` (AppArmor trên máy này chặn sandbox của nó).
+
+- noVNC/x11vnc không có mật khẩu và chỉ lắng nghe trên localhost: ổn trên máy một người dùng.
+- goose: `base_url` của provider cố định là localhost:20128 (NINEROUTER_URL không áp dụng cho goose).

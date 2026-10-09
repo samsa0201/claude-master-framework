@@ -38,6 +38,7 @@ case $cmd in
 new)
   d=$(P "$1"); [ -e "$d" ] && { echo "exists: $d" >&2; exit 1; }
   mkdir -p "$d"/{docs,.team/tasks,.team/out,.team/roles}; git -C "$d" init -q
+  printf '.team/\n' >> "$d/.git/info/exclude"
   echo "# Idea: $1" > "$d/docs/idea.md"; echo "$d" ;;
 attach) # existing repo: isolated git worktree on a new branch, main checkout untouched
   d=$(P "$1"); r=$(readlink -f "$2"); b=${3:-feat/$1}; [ -e "$d" ] && { echo "exists: $d" >&2; exit 1; }
@@ -90,7 +91,7 @@ T
   title=$(head -1 <<<"$task")
   if [ -n "$pane" ]; then   # reuse live worker: follow-up message
     tmux send-keys -t "$pane" -l "$msg"; sleep 0.3; tmux send-keys -t "$pane" Enter
-    header "$pane" "$id" "⏳" "$title"
+    header "$pane" "$id" "⏳" "$title"; echo "$pane" > "$d/.team/out/$id.pane"
     tmux set-option -p -t "$pane" @timeout "$timeout"
     [ "$browser" != none ] && tmux set-option -p -t "$pane" @browser 1
   else                      # first message goes in as the agent's argument: no startup race
@@ -98,7 +99,7 @@ T
     envs=(); while IFS= read -r kv; do [ -n "$kv" ] && envs+=(-e "$kv"); done <<<"$kvs"
     pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" "${envs[@]}" \
       "$(rt_cmd); tmux set-option -p -t \"\$TMUX_PANE\" @dead 1; read -p 'worker exited, enter to close'")
-    tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"
+    tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"; echo "$pane" > "$d/.team/out/$id.pane"
     tmux set-option -p -t "$pane" @timeout "$timeout"; tmux set-option -p -t "$pane" @runtime "$runtime"; tmux set-option -p -t "$pane" @model "$model"
     [ "$browser" != none ] && tmux set-option -p -t "$pane" @browser 1
     tmux set-option -w -t "$pane" pane-border-status top
@@ -108,7 +109,9 @@ T
   fi
   echo "$id" ;;
 wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone without .done
-  pn() { tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$1" '$2==i{print $1}' | head -1; }
+  pn() { local f; f=$(ls "$PROJ"/*/.team/out/"$1".pane 2>/dev/null | head -1 || true)   # pane recorded at assign (a reused pane's @tid moves on)
+    if [ -n "$f" ]; then local q; q=$(cat "$f"); tmux display -p -t "$q" '#{pane_id}' 2>/dev/null || true
+    else tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$1" '$2==i{print $1}' | head -1; fi; }
   p=$(pn "$1"); lim=${2:-}
   [ -n "$lim" ] || { [ -n "$p" ] && lim=$(tmux show-option -pqv -t "$p" @timeout); }   # inside || so set -e ignores an empty p
   lim=${lim:-900}
@@ -125,6 +128,6 @@ wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone wi
 display) case ${1:-} in start) display_start ;; stop) display_stop ;; *) die "team display start|stop" ;; esac ;;
 ui)    exec python3 "$ROOT/ui/serve.py" "${1:-7777}" ;;   # cute live office view of all projects
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;
-close) tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$1${2:+-$2}" 'index($2,p)==1{print $1}' | xargs -r -n1 tmux kill-pane -t ;;
+close) tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$1" -v r="${2:-}" 'r=="" && index($2,p"-")==1 {print $1} r!="" && ($2==p"-"r || $2 ~ ("^"p"-"r"-[0-9]+$")) {print $1}' | xargs -r -n1 tmux kill-pane -t ;;
 *) sed -n '2p' "$0"; exit 1 ;;
 esac
