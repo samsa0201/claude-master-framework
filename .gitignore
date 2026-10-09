@@ -3,3 +3,4 @@ projects/
 models.yml
 .playwright-mcp/
 magisk-poc.png
+.runtime/

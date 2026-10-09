@@ -1,0 +1,40 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "share": "disabled",
+  "provider": {
+    "9r": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "9router",
+      "options": { "baseURL": "http://localhost:20128/v1", "apiKey": "{env:NINEROUTER_API_KEY}" },
+      "models": {
+        "fidt/qwen3.8-flash": { "name": "qwen3.8-flash" },
+        "fidt/kCode": { "name": "kCode" }
+      }
+    }
+  },
+  "permission": {
+    "edit": "allow",
+    "webfetch": "deny",
+    "external_directory": "deny",
+    "doom_loop": "deny",
+    "bash": {
+      "*": "allow",
+      "git push*": "deny",
+      "git remote*": "deny",
+      "git config*": "deny",
+      "git reset --hard*": "deny",
+      "git clean*": "deny",
+      "git branch -D*": "deny",
+      "sudo *": "deny",
+      "rm -rf /*": "deny",
+      "rm -rf ~*": "deny",
+      "env": "deny",
+      "printenv*": "deny",
+      "*.ssh*": "deny",
+      "*profiles.yaml*": "deny",
+      "*models.yml*": "deny",
+      "*NINEROUTER_API_KEY*": "deny"
+    }
+  }
+}

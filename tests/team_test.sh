@@ -65,5 +65,15 @@ check "--new allows other model" test "$(waits "$id")" = done
 printf 'notes\n---\nmodel: fidt/bad\n' > "$TEAM_PROJECTS/p3/.team/roles/qd.md"
 id=$("$T" assign p3 qd "x" --runtime fake); waits "$id" >/dev/null
 check "fm ignores non-frontmatter ---" bash -c "! grep -q 'model=fidt/bad' '$TEAM_PROJECTS/p3/.team/out/$id.md'"
+check "opencode preflight needs key" bash -c "env -u NINEROUTER_API_KEY '$T' assign p1 dev x --runtime opencode 2>&1 | grep -q NINEROUTER_API_KEY"
+check "preflight failure opens no pane" bash -c "! '$T' ls | grep -q ' p1-dev$'"
+check "opencode env is valid JSON with role instructions" bash -c "
+  ROOT='$R' d=/tmp/p role=dev model=fidt/qwen3.8-flash browser=none msg=m NINEROUTER_API_KEY=k
+  source '$R/agents/runtime/opencode.sh'
+  rt_env | sed -n 's/^OPENCODE_CONFIG_CONTENT=//p' | python3 -c 'import json,sys; c=json.load(sys.stdin); assert c[\"instructions\"]==[\"/tmp/p/.team/role-dev.md\"]'"
+check "opencode cmd uses 9r provider + prompt" bash -c "
+  ROOT='$R' d=/tmp/p role=dev model=fidt/kCode browser=none msg=m
+  source '$R/agents/runtime/opencode.sh'; rt_cmd | grep -q -- \"-m 9r/fidt/kCode --prompt 'm'\""
+check "opencode.json is valid JSON" python3 -c "import json; json.load(open('$R/runtime-home/opencode.json'))"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
