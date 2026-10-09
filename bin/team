@@ -97,7 +97,8 @@ T
   else                      # first message goes in as the agent's argument: no startup race
     kvs=$(rt_env) || exit 1   # not via process substitution: adapter failures must abort
     envs=(); while IFS= read -r kv; do [ -n "$kv" ] && envs+=(-e "$kv"); done <<<"$kvs"
-    pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" "${envs[@]}" \
+    # bash -c: the pane command is bash syntax; never run it through the user's tmux default-shell (e.g. fish)
+    pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" "${envs[@]}" bash -c \
       "$(rt_cmd); tmux set-option -p -t \"\$TMUX_PANE\" @dead 1; read -p 'worker exited, enter to close'")
     tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"; echo "$pane" > "$d/.team/out/$id.pane"
     tmux set-option -p -t "$pane" @timeout "$timeout"; tmux set-option -p -t "$pane" @runtime "$runtime"; tmux set-option -p -t "$pane" @model "$model"
