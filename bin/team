@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] | wait <id> [secs] | ls | close <proj> [role] | ui [port]
+# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] | wait <id> [secs] | ls | close <proj> [role] | display start|stop | ui [port]
 # Workers = a coding-agent CLI (adapter agents/runtime/<R>.sh, default opencode) in tmux PANES of the window you run claude in (tagged @team=<proj>-<role>).
 set -euo pipefail
 ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
@@ -10,6 +10,24 @@ fm() { awk -v k="$2" 'NR==1&&$0!="---"{exit} /^---$/{c++;next} c==1 && index($0,
 body() { awk 'NR==1&&$0!="---"{c=2} /^---$/&&c<2{c++;next} c>=2' "$1"; }   # text after frontmatter (whole file if none)
 base_of() { local r=$1; while :; do [ -f "$ROOT/agents/$r.md" ] && { echo "$ROOT/agents/$r.md"; return; }; [[ $r == *-* ]] || break; r=${r%-*}; done; echo "$ROOT/agents/_base.md"; }   # dev-fe -> dev.md
 pick() { local v=$2; [ -n "$v" ] || v=$(fm "$flex" "$1"); [ -n "$v" ] || v=$(fm "$a" "$1"); echo "${v:-$3}"; }   # flag > flex > base > default
+TEAM_DISPLAY=${TEAM_DISPLAY:-:99}; VNC_PORT=${TEAM_VNC_PORT:-5999}; WEB_PORT=${TEAM_WEB_PORT:-6080}
+export TEAM_DISPLAY
+RUN="$PROJ/.display"   # pidfiles + logs of the shared browser display
+up() { [ -f "$RUN/$1.pid" ] && kill -0 "$(cat "$RUN/$1.pid")" 2>/dev/null; }
+bg() { local n=$1; shift; up "$n" || { setsid nohup "$@" >"$RUN/$n.log" 2>&1 & echo $! > "$RUN/$n.pid"; }; }
+display_start() {   # ponytail: one shared display, browser workers run one at a time; per-worker displays if parallel QA is needed
+  mkdir -p "$RUN"
+  bg xvfb Xvfb "$TEAM_DISPLAY" -screen 0 1440x900x24 -nolisten tcp; sleep 1
+  bg vnc x11vnc -display "$TEAM_DISPLAY" -rfbport "$VNC_PORT" -localhost -nopw -forever -shared -quiet
+  bg web websockify --web /usr/share/novnc "127.0.0.1:$WEB_PORT" "127.0.0.1:$VNC_PORT"
+  sleep 1
+  echo "browser live view: ssh -L $WEB_PORT:localhost:$WEB_PORT <host>  ->  http://localhost:$WEB_PORT/vnc.html" >&2
+}
+display_stop() { for n in web vnc xvfb; do if up "$n"; then kill "$(cat "$RUN/$n.pid")"; for _ in {1..30}; do up "$n" || break; sleep 0.1; done; fi; rm -f "$RUN/$n.pid"; done; }
+browser_busy() {   # task ids of live browser workers without .done
+  tmux list-panes -a -F '#{?#{@browser},1,0} #{?#{@dead},1,0} #{@tid}' | awk '$1==1 && $2!=1 {print $3}' |
+    while read -r t; do ls "$PROJ"/*/.team/out/"$t".done >/dev/null 2>&1 || echo "$t"; done
+}
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v n="$1" '$2==n{print $1}' | head -1; }
 # header: pane border shows "role | status task"; window-local, user's global tmux config untouched
 header() { # <pane> <id> <icon> <task text>
@@ -43,6 +61,10 @@ assign)
   rt="$ROOT/agents/runtime/$runtime.sh"; [ -f "$rt" ] || die "unknown runtime: $runtime (see agents/runtime/)"
   msg="Read .team/tasks/$id.md and do it exactly."
   source "$rt"; rt_preflight
+  if [ "$browser" != none ]; then
+    busy=$(browser_busy); [ -z "$busy" ] || die "browser display busy with: $busy (one browser worker at a time; team wait/close it first)"
+    display_start
+  fi
   { body "$a"; [ -f "$flex" ] && { printf '\n## Project notes (from lead)\n'; body "$flex"; }; } > "$d/.team/role-$role.md"
   tag="$proj-$role"; pane=$(pane_of "$tag")
   [ -n "$newp" ] && { n=2; while [ -n "$(pane_of "$tag-$n")" ]; do n=$((n+1)); done; tag="$tag-$n"; pane=; }   # --new: extra parallel worker
@@ -62,12 +84,14 @@ T
     tmux send-keys -t "$pane" -l "$msg"; sleep 0.3; tmux send-keys -t "$pane" Enter
     header "$pane" "$id" "⏳" "$title"
     tmux set-option -p -t "$pane" @timeout "$timeout"
+    [ "$browser" != none ] && tmux set-option -p -t "$pane" @browser 1
   else                      # first message goes in as the agent's argument: no startup race
     envs=(); while IFS= read -r kv; do [ -n "$kv" ] && envs+=(-e "$kv"); done < <(rt_env)
     pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" "${envs[@]}" \
       "$(rt_cmd); tmux set-option -p -t \"\$TMUX_PANE\" @dead 1; read -p 'worker exited, enter to close'")
     tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"
     tmux set-option -p -t "$pane" @timeout "$timeout"; tmux set-option -p -t "$pane" @runtime "$runtime"; tmux set-option -p -t "$pane" @model "$model"
+    [ "$browser" != none ] && tmux set-option -p -t "$pane" @browser 1
     tmux set-option -w -t "$pane" pane-border-status top
     tmux set-option -w -t "$pane" pane-border-format \
       ' #{?#{@team},#[bold]#{@team}#[nobold] │ #{@task},claude (lead)} '
@@ -89,6 +113,7 @@ wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone wi
     if [ -z "$p" ] || [ "$(tmux show-option -pqv -t "$p" @dead)" = 1 ]; then echo dead; exit 2; fi
     sleep 1
   done; echo timeout; exit 1 ;;
+display) case ${1:-} in start) display_start ;; stop) display_stop ;; *) die "team display start|stop" ;; esac ;;
 ui)    exec python3 "$ROOT/ui/serve.py" "${1:-7777}" ;;   # cute live office view of all projects
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;
 close) tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$1${2:+-$2}" 'index($2,p)==1{print $1}' | xargs -r -n1 tmux kill-pane -t ;;
