@@ -104,10 +104,16 @@ check "missing chromium aborts browser assign before spawning" bash -c "
 check "goose refuses browser roles" bash -c "NINEROUTER_API_KEY=k '$T' assign p1 qa x --runtime goose 2>&1 | grep -q 'no browser'"
 check "goose cmd: interactive, system prompt from role file, anti-loop" bash -c "
   ROOT='$R' d=/tmp/p role=dev model=fidt/qwen3.8-flash browser=none msg=m
-  source '$R/agents/runtime/goose.sh'; c=\$(rt_cmd); [[ \$c == *' run -s '* && \$c == *'role-dev.md'* && \$c == *'--max-tool-repetitions 5'* && \$c == *\"-t 'm'\"* ]]"
+  source '$R/agents/runtime/goose.sh'; c=\$(rt_cmd); [[ \$c == *' run --system '*&& \$c != *' -s '* && \$c == *'role-dev.md'* && \$c == *'--max-tool-repetitions 5'* && \$c == *\"-t 'm'\"* ]]"
 check "goose env isolates config/data/state" bash -c "
   ROOT='$R' d=/tmp/p role=dev browser=none NINEROUTER_API_KEY=k
   source '$R/agents/runtime/goose.sh'; e=\$(rt_env)
   grep -qx \"XDG_CONFIG_HOME=$R/runtime-home/goose\" <<<\"\$e\" && grep -qx \"XDG_DATA_HOME=$R/.runtime/data\" <<<\"\$e\" && grep -qx \"XDG_STATE_HOME=$R/.runtime/state\" <<<\"\$e\""
+"$T" new p7 >/dev/null
+id=$("$T" assign p7 dev "FAKE_DIE" --runtime fake)
+check "dead worker reported dead" test "$(waits "$id")" = dead
+id=$("$T" assign p7 dev "ok" --runtime fake)
+check "assign to dead pane respawns -> done" test "$(waits "$id")" = done
+check "exactly one p7-dev pane" test "$("$T" ls | grep -c ' p7-dev$')" = 1
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

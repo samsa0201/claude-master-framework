@@ -68,6 +68,7 @@ assign)
   { body "$a"; [ -f "$flex" ] && { printf '\n## Project notes (from lead)\n'; body "$flex"; }; } > "$d/.team/role-$role.md"
   tag="$proj-$role"; pane=$(pane_of "$tag")
   [ -n "$newp" ] && { n=2; while [ -n "$(pane_of "$tag-$n")" ]; do n=$((n+1)); done; tag="$tag-$n"; pane=; }   # --new: extra parallel worker
+  [ -z "$pane" ] || { [ "$(tmux show-option -pqv -t "$pane" @dead)" != 1 ] && { [ -z "${RT_ONESHOT:-}" ] || [ "$(tmux show-option -pqv -t "$pane" @runtime)" != "$runtime" ]; }; } || { tmux kill-pane -t "$pane"; pane=; }   # exited (or one-shot runtime, which exits after its task): respawn fresh, never send keys to it
   [ -z "$pane" ] || { pr=$(tmux show-option -pqv -t "$pane" @runtime); pm=$(tmux show-option -pqv -t "$pane" @model)
     [ "$pr/$pm" = "$runtime/$model" ] || die "worker $tag runs $pr/$pm; use --new or 'team close $proj $role' to switch"; }
   cat > "$d/.team/tasks/$id.md" <<T
