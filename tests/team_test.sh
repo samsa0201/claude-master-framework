@@ -4,6 +4,7 @@
 set -uo pipefail
 R=$(cd "$(dirname "$0")/.." && pwd)
 export TEAM_REAL_TMUX=$(command -v tmux) PATH="$R/tests/shim:$PATH" TEAM_PROJECTS=$(mktemp -d)
+export TEAM_PORT_BASE=28000 TEAM_PORT_MAX=29000   # private port range: 50 blocks of 20
 export TEAM_DISPLAY=:97 TEAM_VNC_PORT=5997 TEAM_WEB_PORT=6077
 unset TMUX
 T="$R/bin/team"; fail=0
@@ -188,5 +189,38 @@ check "npm fails: falls back to bun on PATH" bash -c '[[ "$1" == *"SERVED 7005"*
 echo five > "$U/ui/web/src/a.ts"; rm -rf "$U/ui/dist" "$U/.runtime"; out=$(FAKE_NPM_FAIL=1 FAKE_BUN_FAIL=1 uirun 7006); rc=$?
 check "no dist and no working bun -> error, not served" bash -c '[ "$2" -ne 0 ] && [[ "$1" != *SERVED* ]]' _ "$out" "$rc"
 rm -rf "$U"
+# --- ports: one block per project, injected into workers, freed on close ---
+pv() { sed -n "s/^$2=//p" "$TEAM_PROJECTS/$1/.team/ports.env"; }
+check "new writes ports.env with a block in range" bash -c "[ \"$(pv p1 PORT_BASE)\" -ge 28000 ] && [ \"$(pv p1 PORT_WEB)\" = \"$(pv p1 PORT_BASE)\" ] && [ \"$(pv p1 COMPOSE_PROJECT_NAME)\" = p1 ]"
+check "blocks of different projects never overlap" bash -c "[ \"$(pv p1 PORT_BASE)\" != \"$(pv p2 PORT_BASE)\" ] && [ \$(( $(pv p2 PORT_BASE) - $(pv p1 PORT_BASE) )) -ne 0 ]"
+b1=$(pv p1 PORT_BASE); "$T" new pdup >/dev/null; rm -rf "$TEAM_PROJECTS/pdup"
+check "slot is stable: registry keeps the project's block" bash -c "grep -c '^p1 ' '$TEAM_PROJECTS/.ports' | grep -qx 1 && [ \"$b1\" = \"$(pv p1 PORT_BASE)\" ]"
+id=$("$T" assign p1 pm "ports" --runtime fake); waits "$id" >/dev/null
+check "worker env carries PORT_* and COMPOSE_PROJECT_NAME" grep -q "ports web=$(pv p1 PORT_WEB) db=$(pv p1 PORT_DB) compose=p1" "$TEAM_PROJECTS/p1/.team/out/$id.md"
+check "task file lists the reserved ports + strict rule" bash -c "grep -q 'PORT_WEB=$(pv p1 PORT_WEB)' '$TEAM_PROJECTS/p1/.team/tasks/$id.md' && grep -q 'strict mode' '$TEAM_PROJECTS/p1/.team/tasks/$id.md'"
+# a project that predates ports gets a block on its first assign
+mkdir -p "$TEAM_PROJECTS/old/.team/"{tasks,out,roles}
+id=$("$T" assign old pm "x" --runtime fake); waits "$id" >/dev/null
+check "legacy project gets ports.env at assign" test -n "$(pv old PORT_WEB)"
+# a block that is busy on the host is skipped at allocation
+nb=$(( 28000 + $(awk 'END{print $2+1}' "$TEAM_PROJECTS/.ports") * 20 ))
+python3 -m http.server "$nb" --bind 127.0.0.1 >/dev/null 2>&1 & hs=$!; sleep 1
+"$T" new pbusy >/dev/null
+check "busy block skipped" bash -c "[ \"$(pv pbusy PORT_BASE)\" -gt $nb ]"
+kill $hs 2>/dev/null
+# ports table + kill: only listeners whose cwd is inside the project
+check "ports table lists names and ssh forward hint" bash -c "o=\$('$T' ports p1); grep -q '^web ' <<<\"\$o\" && grep -q '^db ' <<<\"\$o\" && grep -q 'ssh -L $(pv p1 PORT_WEB):localhost:$(pv p1 PORT_WEB)' <<<\"\$o\""
+(cd "$TEAM_PROJECTS/p1"; python3 -m http.server "$(pv p1 PORT_WEB)" --bind 127.0.0.1 >/dev/null 2>&1 & echo $! > "$TEAM_PROJECTS/in.pid"); sleep 1
+check "ports shows the listener" bash -c "'$T' ports p1 | grep -q '^web .*listening'"
+(cd /tmp; python3 -m http.server "$(pv p1 PORT_API)" --bind 127.0.0.1 >/dev/null 2>&1 & echo $! > "$TEAM_PROJECTS/out.pid"); sleep 1
+"$T" ports p1 kill 2>/dev/null
+sleep 0.5
+check "ports kill stops the in-project listener" bash -c "'$T' ports p1 | grep -q '^web .* free'"
+check "ports kill leaves outside-cwd listener alone" kill -0 "$(cat "$TEAM_PROJECTS/out.pid")"
+kill "$(cat "$TEAM_PROJECTS/out.pid")" 2>/dev/null
+(cd "$TEAM_PROJECTS/p1"; python3 -m http.server "$(pv p1 PORT_DB)" --bind 127.0.0.1 >/dev/null 2>&1 & echo $! > "$TEAM_PROJECTS/in.pid"); sleep 1
+"$T" close p1 2>/dev/null; sleep 0.5
+check "close <proj> frees its ports" bash -c "'$T' ports p1 | grep -q '^db .* free'"
+check "exhausted range: clear error, nothing left behind" bash -c "o=\$(TEAM_PORT_MAX=28020 '$T' new pfull 2>&1); [ \$? -ne 0 ] && grep -q 'no free port block' <<<\"\$o\" && [ ! -e '$TEAM_PROJECTS/pfull' ]"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

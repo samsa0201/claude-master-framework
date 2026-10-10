@@ -8,7 +8,7 @@ do_msg() {
   t=.team/tasks/$id.md
   grep -q FAKE_DIE "$t" && exit 3
   grep -q FAKE_HANG "$t" && return 0
-  { echo "role=$FAKE_ROLE model=$FAKE_MODEL browser=$FAKE_BROWSER"; cat ".team/role-$FAKE_ROLE.md"; } > ".team/out/$id.md"
+  { echo "role=$FAKE_ROLE model=$FAKE_MODEL browser=$FAKE_BROWSER"; echo "ports web=${PORT_WEB:-} db=${PORT_DB:-} compose=${COMPOSE_PROJECT_NAME:-}"; cat ".team/role-$FAKE_ROLE.md"; } > ".team/out/$id.md"
   touch ".team/out/$id.done"
 }
 do_msg "$1"
