@@ -7,3 +7,5 @@ magisk-poc.png
 runtime-home/xdg/*
 !runtime-home/xdg/.gitkeep
 __pycache__/
+ui/dist/
+ui/web/node_modules/
