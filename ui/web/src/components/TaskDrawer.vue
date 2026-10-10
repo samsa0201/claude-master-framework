@@ -29,7 +29,8 @@ async function load() {
   loading.value = true
   const id = props.task.id
   try {
-    const [b, r] = await Promise.all([text(`.team/tasks/${id}.md`), text(`.team/out/${id}.md`)])
+    const hasReport = props.task.status === 'done' || !!props.task.summary // avoids a pointless 404 for tasks still running
+    const [b, r] = await Promise.all([text(`.team/tasks/${id}.md`), hasReport ? text(`.team/out/${id}.md`) : null])
     if (props.task.id === id) [brief.value, report.value] = [b, r]
   } catch {
     brief.value = report.value = null
@@ -60,7 +61,7 @@ onBeforeUnmount(() => {
 })
 watch(() => props.task.id, load)
 // a running task's report appears when the worker finishes
-watch(() => props.task.status, load)
+watch(() => [props.task.status, props.task.summary], load)
 </script>
 
 <template>

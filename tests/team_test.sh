@@ -143,5 +143,6 @@ check "new excludes .team from git" git -C "$TEAM_PROJECTS/gx" check-ignore -q .
 ida=$("$T" assign w1 dev "FAKE_HANG" --runtime fake); sleep 1
 idb=$("$T" assign w1 dev "FAKE_HANG" --runtime fake)
 check "wait on superseded id in live pane -> timeout" test "$(waits "$ida" 3)" = timeout
+check "team ui refuses when ui/dist is missing" bash -c "o=\$(STUDIO_ROOT='$TEAM_PROJECTS/nostudio' '$T' ui 2>&1); [ \$? -ne 0 ] && grep -q 'bun run build' <<<\"\$o\""
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

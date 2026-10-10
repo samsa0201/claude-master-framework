@@ -1,6 +1,6 @@
 # Web UI (`team ui`) — làm lại
 
-Ngày: 2026-10-09. Trạng thái: đã duyệt, đang làm (slice 1 xong).
+Ngày: 2026-10-09. Trạng thái: đã làm xong (slice 1-4). Kiểm bằng `tests/ui_api_test.py`, `bun test`, `tests/team_test.sh` và Playwright trên dữ liệu mẫu `tests/ui_demo.sh`.
 
 ## Mục tiêu
 Thay màn hình Pip-Boy (văn phòng pixel, CRT, roi cursor) bằng dashboard hiện đại, gọn, đọc được khi làm việc lâu. Vẫn **chỉ xem** (không ghi gì), nhưng thêm: đọc tài liệu dự án và xem diff của worktree.

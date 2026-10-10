@@ -3,6 +3,14 @@ Claude session as entry point (product lead), coding-agent workers (opencode by 
 Setup: `./install.sh` (installs opencode/goose under `.runtime/`), put `NINEROUTER_API_KEY=...` in `.env` (gitignored, chmod 600) and load it in your shell (fish: `~/.config/fish/conf.d/studio.fish`, bash: `set -a; . ~/dev/studio/.env; set +a` in `~/.bashrc`), then `claude` in this dir.
 Commands: `team new|attach|assign|wait|ls|close|display|ui` (see bin/team). Tests: `tests/team_test.sh`, `tests/runtime-accept.sh <runtime> <model>`.
 
+## Dashboard web (`team ui`)
+Chỉ đọc: worker và task trực tiếp, docs của project (markdown), diff chưa commit + lịch sử commit, terminal của worker; light/dark. Server `ui/serve.py` (stdlib) chỉ nghe `127.0.0.1` và chỉ nhận GET; giao diện Vite + Vue 3 + TypeScript chạy bằng Bun trong `ui/web/`, build ra `ui/dist/` (gitignored).
+- Build: `install.sh` tự build nếu có bun, hoặc `cd ui/web && bun install --frozen-lockfile && bun run build`. Thiếu `ui/dist/` thì `team ui` dừng và in lệnh này.
+- Chạy: `team ui [port]` (mặc định 7777), rồi `ssh -L 7777:localhost:7777 <host>` và mở http://localhost:7777. Header `Host` ngoài localhost bị chặn (chống DNS rebinding); thêm host bằng `TEAM_UI_HOSTS=a.example,b.example` (vd. khi dùng `tailscale serve`).
+- Bảo vệ: chỉ đọc `.md` trong `docs/` và `.team/{roles,tasks,out}` (không symlink/`..`), git chạy không shell và bỏ `fsmonitor`/ext-diff/textconv, file chưa track kiểu `.env`/`*.pem`/`*.key` không hiện trong diff. Nội dung do worker viết nên markdown tắt HTML thô, có CSP.
+- Dev: chạy `team ui`, rồi `cd ui/web && bun run dev` (Vite proxy `/api` sang 7777). Test: `python3 -m unittest tests/ui_api_test.py`, `cd ui/web && bun test`. Dữ liệu mẫu để xem thử (tmux riêng, thư mục tạm): `tests/ui_demo.sh [port]`.
+- Thiết kế: [docs/superpowers/specs/2026-10-09-web-ui-redesign.md](docs/superpowers/specs/2026-10-09-web-ui-redesign.md). Giao diện Pip-Boy cũ còn trong git history (commit `0dfce01`).
+
 ## Worker runtime: vì sao chọn opencode (POC 2026-10-09)
 Worker dùng model tùy chỉnh (qwen3.8-flash, kCode qua 9router) chạy trong một coding agent CLI. Đã POC 4 agent × 2 model × 3 task (T1 thêm hàm + test, T2 sửa UI, T3 kỷ luật: không sửa file khóa, ghi `.team/out/*.md` + `.done`). Kết quả chấm bằng script, không tin lời agent tự báo. Chi tiết và lệnh tái hiện: [docs/poc/agents-poc.md](docs/poc/agents-poc.md).
 
