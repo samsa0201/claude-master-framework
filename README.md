@@ -5,7 +5,7 @@ Commands: `team new|attach|assign|wait|ls|close|display|ui` (see bin/team). Test
 
 ## Dashboard web (`team ui`)
 Chỉ đọc: worker và task trực tiếp, docs của project (markdown), diff chưa commit + lịch sử commit, terminal của worker; light/dark. Server `ui/serve.py` (stdlib) chỉ nghe `127.0.0.1` và chỉ nhận GET; giao diện Vite + Vue 3 + TypeScript chạy bằng Bun trong `ui/web/`, build ra `ui/dist/` (gitignored).
-- Build: `install.sh` tự build nếu có bun, hoặc `cd ui/web && bun install --frozen-lockfile && bun run build`. Thiếu `ui/dist/` thì `team ui` dừng và in lệnh này.
+- Build: `team ui` tự build khi thiếu `ui/dist/` hoặc khi file trong `ui/web/` mới hơn bản build (cần `bun`; lần đầu cần mạng để `bun install`). Build lỗi mà đã có bản cũ thì vẫn phục vụ bản cũ. `install.sh` cũng build sẵn. Làm tay: `cd ui/web && bun install --frozen-lockfile && bun run build`. `bun.lock` tạo bằng bun 1.3.x (bun cũ hơn không đọc được lockfile của bun mới).
 - Chạy: `team ui [port]` (mặc định 7777), rồi `ssh -L 7777:localhost:7777 <host>` và mở http://localhost:7777. Header `Host` ngoài localhost bị chặn (chống DNS rebinding); thêm host bằng `TEAM_UI_HOSTS=a.example,b.example` (vd. khi dùng `tailscale serve`).
 - Bảo vệ: chỉ đọc `.md` trong `docs/` và `.team/{roles,tasks,out}` (không symlink/`..`), git chạy không shell và bỏ `fsmonitor`/ext-diff/textconv, file chưa track kiểu `.env`/`*.pem`/`*.key` không hiện trong diff. Nội dung do worker viết nên markdown tắt HTML thô, có CSP.
 - Dev: chạy `team ui`, rồi `cd ui/web && bun run dev` (Vite proxy `/api` sang 7777). Test: `python3 -m unittest tests/ui_api_test.py`, `cd ui/web && bun test`. Dữ liệu mẫu để xem thử (tmux riêng, thư mục tạm): `tests/ui_demo.sh [port]`.

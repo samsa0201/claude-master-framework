@@ -143,6 +143,33 @@ check "new excludes .team from git" git -C "$TEAM_PROJECTS/gx" check-ignore -q .
 ida=$("$T" assign w1 dev "FAKE_HANG" --runtime fake); sleep 1
 idb=$("$T" assign w1 dev "FAKE_HANG" --runtime fake)
 check "wait on superseded id in live pane -> timeout" test "$(waits "$ida" 3)" = timeout
-check "team ui refuses when ui/dist is missing" bash -c "o=\$(STUDIO_ROOT='$TEAM_PROJECTS/nostudio' '$T' ui 2>&1); [ \$? -ne 0 ] && grep -q 'bun run build' <<<\"\$o\""
+# team ui builds the dashboard on demand, then serves it (fake studio root with a fake bun and serve.py)
+U=$(mktemp -d); mkdir -p "$U/ui/web/src" "$U/fakebin"
+echo 'import sys; print("SERVED", sys.argv[1])' > "$U/ui/serve.py"; echo x > "$U/ui/web/src/a.ts"; echo x > "$U/ui/web/package.json"
+cat > "$U/fakebin/bun" <<'B'
+#!/usr/bin/env bash
+echo "bun $*" >> "$FAKE_BUN_LOG"
+[ -z "${FAKE_BUN_FAIL:-}" ] || exit 1
+[ "$1 $2" = "run build" ] && { mkdir -p ../dist; echo built > ../dist/index.html; }
+exit 0
+B
+chmod +x "$U/fakebin/bun"
+uirun() { PATH="$U/fakebin:$PATH" STUDIO_ROOT="$U" FAKE_BUN_LOG="$U/bun.log" "$T" ui "$@" 2>&1; }
+out=$(uirun 7000)
+check "team ui builds when ui/dist is missing, then serves" bash -c '[[ "$1" == *"SERVED 7000"* ]] && grep -q "install --frozen-lockfile" "$2" && grep -q "run build" "$2"' _ "$out" "$U/bun.log"
+mkdir -p "$U/ui/web/node_modules"; touch "$U/ui/web/node_modules/x"
+touch -d '1 hour ago' "$U/ui/web/src/a.ts" "$U/ui/web/package.json"; touch "$U/ui/dist/index.html"; touch "$U/ui/web/node_modules/y"; rm -f "$U/bun.log"
+out=$(uirun 7001)
+check "team ui skips the build when sources are older (node_modules ignored)" bash -c '[[ "$1" == *"SERVED 7001"* ]] && [ ! -e "$2" ]' _ "$out" "$U/bun.log"
+touch "$U/ui/web/src/a.ts"; touch -d '1 hour ago' "$U/ui/dist/index.html"
+out=$(uirun 7002)
+check "team ui rebuilds when a source is newer than the build" bash -c '[[ "$1" == *"SERVED 7002"* ]] && grep -q "run build" "$2"' _ "$out" "$U/bun.log"
+touch "$U/ui/web/src/a.ts"; touch -d '1 hour ago' "$U/ui/dist/index.html"
+out=$(FAKE_BUN_FAIL=1 uirun 7003)
+check "failed rebuild still serves the previous build" bash -c '[[ "$1" == *"previous build"* && "$1" == *"SERVED 7003"* ]]' _ "$out"
+rm -rf "$U/ui/dist"
+out=$(FAKE_BUN_FAIL=1 uirun 7004); rc=$?
+check "no build and bun fails -> error with instructions, not served" bash -c '[ "$2" -ne 0 ] && [[ "$1" == *"bun run build"* && "$1" != *SERVED* ]]' _ "$out" "$rc"
+rm -rf "$U"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
