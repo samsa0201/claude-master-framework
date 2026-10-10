@@ -10,6 +10,5 @@ if [ ! -x "$R/.runtime/goose/goose" ]; then   # official release binary, pinned
 fi
 ln -sf "$R/bin/team" ~/.local/bin/team
 mkdir -p ~/.claude/skills && ln -sfn "$R/skills/studio" ~/.claude/skills/studio
-if command -v bun >/dev/null; then (cd "$R/ui/web" && bun install --frozen-lockfile && bun run build)   # dashboard for `team ui`
-else echo "bun not found: for 'team ui' install bun (https://bun.sh), then: cd $R/ui/web && bun install && bun run build"; fi
+"$R/ui/build.sh"   # dashboard for `team ui` (installs the bun pinned in ui/web/package.json under .runtime/bun)
 echo "ok. export NINEROUTER_API_KEY=... (in the shell that runs claude), then: team new <name>"

@@ -127,7 +127,7 @@ wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone wi
     sleep 1
   done; echo timeout; exit 1 ;;
 display) case ${1:-} in start) display_start ;; stop) display_stop ;; *) die "team display start|stop" ;; esac ;;
-ui)    [ -f "$ROOT/ui/dist/index.html" ] || die "ui not built: cd $ROOT/ui/web && bun install && bun run build"
+ui)    "$ROOT/ui/build.sh" || { [ -f "$ROOT/ui/dist/index.html" ] && echo "dashboard rebuild failed: serving the previous build" >&2 || die "dashboard not built (see above)"; }
        exec python3 "$ROOT/ui/serve.py" "${1:-7777}" ;;   # read-only dashboard: workers, tasks, docs, diffs, terminals
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;
 close) tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$1" -v r="${2:-}" 'r=="" && index($2,p"-")==1 {print $1} r!="" && ($2==p"-"r || $2 ~ ("^"p"-"r"-[0-9]+$")) {print $1}' | xargs -r -n1 tmux kill-pane -t ;;

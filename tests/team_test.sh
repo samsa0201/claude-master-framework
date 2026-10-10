@@ -143,6 +143,50 @@ check "new excludes .team from git" git -C "$TEAM_PROJECTS/gx" check-ignore -q .
 ida=$("$T" assign w1 dev "FAKE_HANG" --runtime fake); sleep 1
 idb=$("$T" assign w1 dev "FAKE_HANG" --runtime fake)
 check "wait on superseded id in live pane -> timeout" test "$(waits "$ida" 3)" = timeout
-check "team ui refuses when ui/dist is missing" bash -c "o=\$(STUDIO_ROOT='$TEAM_PROJECTS/nostudio' '$T' ui 2>&1); [ \$? -ne 0 ] && grep -q 'bun run build' <<<\"\$o\""
+# team ui builds the dashboard on demand (ui/build.sh), then serves it. Fake studio root; fake npm installs a fake pinned bun.
+U=$(mktemp -d); mkdir -p "$U/ui/web/src" "$U/fakebin"; cp "$R/ui/build.sh" "$U/ui/"
+echo 'import sys; print("SERVED", sys.argv[1])' > "$U/ui/serve.py"; echo one > "$U/ui/web/src/a.ts"
+echo '{"packageManager": "bun@1.3.14"}' > "$U/ui/web/package.json"
+fakebun() { mkdir -p "$(dirname "$1")"; cat > "$1" <<B
+#!/usr/bin/env bash
+[ "\$1" = --version ] && { echo 1.3.14; exit 0; }
+echo "$2 \$*" >> "\$FAKE_LOG"
+[ -z "\${FAKE_BUN_FAIL:-}" ] || exit 1
+[ "\$1 \$2" = "run build" ] && { mkdir -p ../dist; echo built > ../dist/index.html; }
+exit 0
+B
+  chmod +x "$1"; }
+cat > "$U/fakebin/npm" <<B
+#!/usr/bin/env bash
+echo "NPM \$*" >> "\$FAKE_LOG"
+[ -z "\${FAKE_NPM_FAIL:-}" ] || exit 1
+B="\$3/node_modules/.bin/bun"; mkdir -p "\$(dirname "\$B")"
+cat > "\$B" <<'F'
+#!/usr/bin/env bash
+[ "\$1" = --version ] && { echo 1.3.14; exit 0; }
+echo "PINNED \$*" >> "\$FAKE_LOG"
+[ -z "\${FAKE_BUN_FAIL:-}" ] || exit 1
+[ "\$1 \$2" = "run build" ] && { mkdir -p ../dist; echo built > ../dist/index.html; }
+exit 0
+F
+chmod +x "\$B"
+B
+chmod +x "$U/fakebin/npm"; fakebun "$U/fakebin/bun" PATHBUN
+uirun() { PATH="$U/fakebin:$PATH" STUDIO_ROOT="$U" FAKE_LOG="$U/log" "$T" ui "$@" 2>&1; }
+out=$(uirun 7000)
+check "no dist: installs the pinned bun via npm, builds with it, serves" bash -c '[[ "$1" == *"SERVED 7000"* ]] && grep -q "^NPM i --prefix .*/.runtime/bun bun@1.3.14" "$2" && grep -q "^PINNED install --frozen-lockfile" "$2" && grep -q "^PINNED run build" "$2" && ! grep -q PATHBUN "$2"' _ "$out" "$U/log"
+rm -f "$U/log"; mkdir -p "$U/ui/web/node_modules"; echo y > "$U/ui/web/node_modules/x"; out=$(uirun 7001)
+check "unchanged sources: nothing runs (node_modules ignored)" bash -c '[[ "$1" == *"SERVED 7001"* ]] && [ ! -e "$2" ]' _ "$out" "$U/log"
+touch -d '+1 hour' "$U/ui/web/src/a.ts"; out=$(uirun 7002)
+check "newer mtime but same content: no build (hash, not mtime)" bash -c '[[ "$1" == *"SERVED 7002"* ]] && [ ! -e "$2" ]' _ "$out" "$U/log"
+echo two > "$U/ui/web/src/a.ts"; out=$(uirun 7003)
+check "changed content: rebuild with the installed pinned bun, no reinstall" bash -c '[[ "$1" == *"SERVED 7003"* ]] && grep -q "^PINNED run build" "$2" && ! grep -q "^NPM" "$2"' _ "$out" "$U/log"
+echo three > "$U/ui/web/src/a.ts"; out=$(FAKE_BUN_FAIL=1 uirun 7004)
+check "failed rebuild still serves the previous build" bash -c '[[ "$1" == *"previous build"* && "$1" == *"SERVED 7004"* ]]' _ "$out"
+echo four > "$U/ui/web/src/a.ts"; rm -rf "$U/.runtime" "$U/log"; out=$(FAKE_NPM_FAIL=1 uirun 7005)
+check "npm fails: falls back to bun on PATH" bash -c '[[ "$1" == *"SERVED 7005"* ]] && grep -q "^PATHBUN run build" "$2"' _ "$out" "$U/log"
+echo five > "$U/ui/web/src/a.ts"; rm -rf "$U/ui/dist" "$U/.runtime"; out=$(FAKE_NPM_FAIL=1 FAKE_BUN_FAIL=1 uirun 7006); rc=$?
+check "no dist and no working bun -> error, not served" bash -c '[ "$2" -ne 0 ] && [[ "$1" != *SERVED* ]]' _ "$out" "$rc"
+rm -rf "$U"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
