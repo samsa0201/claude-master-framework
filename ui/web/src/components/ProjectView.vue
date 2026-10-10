@@ -6,6 +6,8 @@ import { statsOf, tasksOf } from '../model'
 import Icon, { type IconName } from './Icon.vue'
 import OverviewTab from './OverviewTab.vue'
 import TerminalTab from './TerminalTab.vue'
+import DocsTab from './DocsTab.vue'
+import ChangesTab from './ChangesTab.vue'
 
 const props = defineProps<{ project: string }>()
 
@@ -18,9 +20,9 @@ const TAB_META: Record<Tab, { label: string; icon: IconName }> = {
   changes: { label: 'Changes', icon: 'diff' },
   terminal: { label: 'Terminal', icon: 'terminal' },
 }
-const TAB_VIEW: Partial<Record<Tab, unknown>> = { overview: OverviewTab, terminal: TerminalTab }
-const tabs = computed(() => TABS.filter((t) => t in TAB_VIEW))
-const view = computed(() => TAB_VIEW[route.tab] ?? OverviewTab)
+const TAB_VIEW = { overview: OverviewTab, docs: DocsTab, changes: ChangesTab, terminal: TerminalTab }
+const tabs = TABS
+const view = computed(() => TAB_VIEW[route.tab])
 </script>
 
 <template>
@@ -69,5 +71,7 @@ h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
 @media (max-width: 860px) {
   .head { padding: 14px 16px 0; }
   .content { padding: 18px 16px 32px; }
+  .tabs { gap: 0; }
+  .tab { padding: 8px 9px; gap: 5px; font-size: 13px; }
 }
 </style>

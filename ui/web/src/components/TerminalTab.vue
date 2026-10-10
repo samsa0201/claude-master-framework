@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // Live view of a worker's tmux pane: polls /api/term once a second while this tab is open and visible.
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { api } from '../api'
 import { state } from '../store'
 import { route, go } from '../route'
+import { usePoll } from '../poll'
 
 const props = defineProps<{ project: string }>()
 
@@ -12,32 +13,24 @@ const tag = computed(() => route.arg || tags.value[0] || '')
 const text = ref<string | null>(null)
 const failed = ref(false)
 const screen = ref<HTMLElement>()
-let timer: ReturnType<typeof setTimeout> | undefined
-let alive = true
 
-async function poll() {
-  clearTimeout(timer)
+const { refresh } = usePoll(async () => {
   const want = tag.value
-  if (want && !document.hidden) {
-    try {
-      const r = await api.term(want, AbortSignal.timeout(4000))
-      if (want === tag.value) {
-        const el = screen.value
-        const stick = !el || el.scrollTop + el.clientHeight >= el.scrollHeight - 30 // follow output unless the user scrolled up
-        text.value = r.text
-        failed.value = false
-        if (stick) await nextTick(() => { if (screen.value) screen.value.scrollTop = screen.value.scrollHeight })
-      }
-    } catch {
-      failed.value = true
-    }
+  if (!want) return
+  try {
+    const r = await api.term(want, AbortSignal.timeout(4000))
+    if (want !== tag.value) return // the user switched worker while this was in flight
+    const el = screen.value
+    const stick = !el || el.scrollTop + el.clientHeight >= el.scrollHeight - 30 // follow output unless the user scrolled up
+    text.value = r.text
+    failed.value = false
+    if (stick) await nextTick(() => { if (screen.value) screen.value.scrollTop = screen.value.scrollHeight })
+  } catch {
+    failed.value = true
   }
-  if (alive) timer = setTimeout(poll, 1000)
-}
+}, 1000)
 
-onMounted(poll)
-onBeforeUnmount(() => { alive = false; clearTimeout(timer) })
-watch(tag, () => { text.value = null; void poll() })
+watch(tag, () => { text.value = null; void refresh() })
 </script>
 
 <template>
