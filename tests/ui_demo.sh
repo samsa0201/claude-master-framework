@@ -88,9 +88,18 @@ printf 'TOKEN=secret\n' > "$TEAM_PROJECTS/$P/.env"
 
 mk $P pm pm 95 90 "Write the PRD for the Magisk module manager" "PRD written: 3 goals, 3 stories." >/dev/null
 mk $P ux ux 88 80 "Design the module list and toggle flow" "UX flows for list/toggle drawn in docs/ux.md." >/dev/null
-mk $P dev-be dev-be 70 52 "Slice 1: GET /api/modules returns installed modules" "Endpoint implemented with 4 tests." >/dev/null
-mk $P dev-fe dev-fe 50 41 "Slice 1: module list view" "ModuleList.vue renders modules; tests green." >/dev/null
-mk $P qc qc 40 36 "Review slice 1 diff" "Two nits: rename tmp -> modules, add empty state." >/dev/null
+# vf <project> <id> <ok|warn|fail> <summary> [detail lines...]: what `team wait` writes when a worker says done
+vf() { local p=$TEAM_PROJECTS/$1/.team/out/$2.verify; printf '%s\t%s\n' "$3" "$4" > "$p"; shift 4; [ $# -eq 0 ] || printf '%s\n' "$@" >> "$p"; }
+# screen <project> <id> <why> <text>: the saved copy of the worker's pane
+screen() { mkdir -p "$TEAM_PROJECTS/$1/.team/logs"; printf '# Worker screen of %s (%s, 2026-10-10 06:11:09)\n\n~~~~~~text\n%s\n~~~~~~\n' "$2" "$3" "$4" > "$TEAM_PROJECTS/$1/.team/logs/$2.md"; }
+id=$(mk $P dev-be dev-be 70 52 "Slice 1: GET /api/modules returns installed modules" "Endpoint implemented with 4 tests.")
+vf $P "$id" ok "result written · 2 files changed · done command passed (4s)"
+screen $P "$id" done $'$ opencode\n● Editing server/modules.py\n● Running: pytest\n  4 passed in 0.31s\nDone.'
+id=$(mk $P dev-fe dev-fe 50 41 "Slice 1: module list view" "ModuleList.vue renders modules; tests green.")
+vf $P "$id" fail "2 files outside the allowed scope · result written · 3 files changed · done command passed (6s)" \
+  "changed: package.json, src/ModuleList.vue, vite.config.ts" "outside scope (src/): package.json, vite.config.ts"
+id=$(mk $P qc qc 40 36 "Review slice 1 diff" "Two nits: rename tmp -> modules, add empty state.")
+vf $P "$id" warn "no test command (pass --done or set test: in .team/roles/qc.md) · result written"
 mk $P qa qa 30 - "Verify slice 1 in the browser (use the playwright browser tools)" >/dev/null           # abandoned: no pane, no .done
 T1=$(mk $P dev-fe dev-fe 6 - "Slice 2: toggle a module and show the reboot-needed banner. Files: src/ModuleList.vue, src/api.ts")
 T2=$(mk $P dev-fe dev-fe-2 3 - "Slice 2b: offline cache with a service worker")

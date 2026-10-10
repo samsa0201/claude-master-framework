@@ -1,6 +1,10 @@
 // Shapes returned by ui/serve.py. Read-only: every call is a GET.
 export type TaskStatus = 'working' | 'done' | 'stale'
 
+export type VerifyStatus = 'ok' | 'warn' | 'fail'
+// result of the checks `team wait` runs when a worker says done (tests, files outside the allowed scope, empty result…)
+export interface Verify { status: VerifyStatus; summary: string; details: string }
+
 export interface Task {
   id: string
   proj: string
@@ -12,6 +16,8 @@ export interface Task {
   seat: string // worker pane name inside the project, e.g. dev-fe-2
   worker: string | null // live pane tag while the pane still holds this task
   status: TaskStatus
+  verify: Verify | null
+  log: boolean // a saved screen of the worker pane exists (.team/logs/<id>.md)
 }
 
 export interface StudioState {

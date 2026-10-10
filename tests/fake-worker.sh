@@ -2,13 +2,18 @@
 # Fake worker for tests: handles "Read .team/tasks/<id>.md ..." messages (argv, then stdin lines).
 # Writes env + assembled role prompt to .team/out/<id>.md, then <id>.done.
 # Task text FAKE_DIE: exit without .done (crash). FAKE_HANG: never finish this task.
+# FAKE_WRITE=<path> (repeatable): append a line to that file. FAKE_COMMIT: commit everything. FAKE_NORESULT: say done without a result file.
 do_msg() {
   local id t
   id=$(sed -n 's|.*\.team/tasks/\([^ ]*\)\.md.*|\1|p' <<<"$1"); [ -n "$id" ] || return 0
   t=.team/tasks/$id.md
+  echo "fake worker: working on $id"
   grep -q FAKE_DIE "$t" && exit 3
   grep -q FAKE_HANG "$t" && return 0
-  { echo "role=$FAKE_ROLE model=$FAKE_MODEL browser=$FAKE_BROWSER"; cat ".team/role-$FAKE_ROLE.md"; } > ".team/out/$id.md"
+  local w
+  for w in $(grep -o 'FAKE_WRITE=[^ ]*' "$t" | cut -d= -f2); do mkdir -p "$(dirname "$w")"; echo "$id" >> "$w"; done
+  grep -q FAKE_COMMIT "$t" && { git add -A; git -c user.email=f@f -c user.name=fake commit -qm "fake $id"; }
+  grep -q FAKE_NORESULT "$t" || { echo "role=$FAKE_ROLE model=$FAKE_MODEL browser=$FAKE_BROWSER"; cat ".team/role-$FAKE_ROLE.md"; } > ".team/out/$id.md"
   touch ".team/out/$id.done"
 }
 do_msg "$1"

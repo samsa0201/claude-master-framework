@@ -4,6 +4,7 @@ import { now } from '../store'
 import { clock, duration } from '../format'
 import type { Task, TaskStatus } from '../api'
 import StatusBadge from './StatusBadge.vue'
+import VerifyBadge from './VerifyBadge.vue'
 
 const props = defineProps<{ tasks: Task[] }>()
 defineEmits<{ open: [id: string] }>()
@@ -31,6 +32,7 @@ const took = (t: Task) => (t.end ? duration(t.end - t.start) : t.status === 'wor
         <span class="seat mono">{{ t.seat }}</span>
         <span class="body">
           <span class="title">{{ t.title || t.id }}</span>
+          <span v-if="t.verify" class="vrow"><VerifyBadge :verify="t.verify" /><span v-if="t.verify.status !== 'ok'" class="muted vs">{{ t.verify.summary }}</span></span>
           <span v-if="t.summary && t.status === 'done'" class="sum muted">{{ t.summary }}</span>
         </span>
         <span class="when muted">
@@ -57,6 +59,8 @@ li + li { border-top: 1px solid var(--border); }
 .seat { font-size: 12.5px; padding-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .title { overflow-wrap: anywhere; }
+.vrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 2px; }
+.vs { font-size: 12.5px; overflow-wrap: anywhere; }
 .sum { font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .when { display: flex; flex-direction: column; align-items: flex-end; font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 @media (max-width: 720px) {

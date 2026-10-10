@@ -8,14 +8,16 @@ Studio root = `dirname $(dirname $(readlink -f $(which team)))` (call it $STUDIO
 
 You (Claude) are **product lead + architect**; the user only talks to you. Workers are coding-agent CLIs (runtime adapter `agents/runtime/<R>.sh`, default `opencode`, fallback `goose`) running custom models via 9router, as tmux PANES next to this one (tag `@team=<project>-<role>`) so the user watches live (`Ctrl-b z` zooms one). Treat them like sub-agents: small self-contained task in, result file out, then YOU verify (diff + tests) — never trust a worker's "done".
 Roles (`agents/<role>.md`, base prompt + defaults): `pm`, `ux`, `dev` (TDD), `qa` (runs things, drives a real browser), `qc` (reviews diff, no edits), `docs` (no code edits). Any role name works; base = longest matching prefix (`dev-fe` → `dev.md`), else `_base.md`.
-**Flex:** when a project starts (or after `team attach`), write `projects/<name>/.team/roles/<role-name>.md` per worker you will use: stack, build/test/lint commands, conventions, key files, specialty. Optional frontmatter `runtime:`, `model:`, `browser:`, `timeout:` overrides the base. Example `dev-fe.md` with `model: fidt/kCode`.
+**Flex:** when a project starts (or after `team attach`), write `projects/<name>/.team/roles/<role-name>.md` per worker you will use: stack, build/test/lint commands, conventions, key files, specialty. Optional frontmatter `runtime:`, `model:`, `browser:`, `timeout:` overrides the base; `test: <cmd>` is the role's default done command (see `--done`). Example `dev-fe.md` with `model: fidt/kCode` and `test: bun test`.
 
 ## Flow (per product)
 1. `team new <name>`; put the user's idea in `projects/<name>/docs/idea.md`.
 2. `team assign <name> pm "..."` → docs/prd.md. Then you write docs/architecture.md yourself (web PWA vs Android, stack, data model, slices). Then `team assign <name> ux "..."`.
 3. **STOP: user approves PRD + architecture + UX before any code.**
-4. One vertical slice at a time: `team assign <name> dev-<x> "<slice>"`, then `team assign <name> qc "review <slice>"`, then `team assign <name> qa "verify <slice>"`.
-5. For each assign: run `team wait <id>` in background (Bash run_in_background; default timeout = role/model timeout). Output `done` → read `projects/<name>/.team/out/<id>.md` and review the diff yourself; `timeout` → `tmux capture-pane` the worker, then nudge it, `team close` + reassign, or switch `--runtime/--model`; `dead` → the worker exited or its pane is gone, read its pane and reassign.
+4. One vertical slice at a time: `team assign <name> dev-<x> "<slice>" --files <paths> --done "<test cmd>"`, then `team assign <name> qc "review <slice>"`, then `team assign <name> qa "verify <slice>"`.
+5. For each assign: run `team wait <id>` in background (Bash run_in_background; default timeout = role/model timeout). Its first line is `done` | `timeout` | `dead`, then facts:
+   - `done` + `verify: OK|WARN|FAIL — …`: the checks `team wait` ran itself (result file exists, files changed vs `--files`, the done command). **FAIL: do not accept**; reassign with the failure quoted. **WARN: look into it first** (e.g. no files changed, no test command). **OK**: still read `projects/<name>/.team/out/<id>.md` and skim the diff yourself.
+   - `timeout` / `dead` + the pane's last lines and when it last changed (whole screen saved in `.team/logs/<id>.md`): nudge it, `team close` + reassign, or switch `--runtime/--model`. `timeout` is a deadline, not a kill: the worker may still be running.
 
 ## Flow (feature in an existing repo)
 1. `team attach <name> <repo-path> [branch]` → worktree `projects/<name>` on branch `feat/<name>`; the user's checkout stays untouched. Run install/setup (deps, .env) there.
@@ -25,15 +27,17 @@ Roles (`agents/<role>.md`, base prompt + defaults): `pm`, `ux`, `dev` (TDD), `qa
 5. Finish: user decides merge/PR; then `git worktree remove projects/<name>`.
 
 ## Choosing runtime / model / parallel workers (you decide; ask the user only if cost is unclear)
-`team assign <name> <role> "<task>" [--runtime opencode|goose] [--model <id>] [--new]`
+`team assign <name> <role> "<task>" [--runtime opencode|goose] [--model <id>] [--new] [--files a,b/] [--done "<cmd>"]`
 - Models (9router ids): `fidt/qwen3.8-flash` (default; logic, backend, docs, review), `fidt/kCode` (UI/frontend; upstream is slow, default timeout 30 min). Put per-worker defaults in the flex file instead of repeating flags.
 - Runtime: `opencode` (default; only one with browser support). `goose` as fallback when opencode misbehaves on a task; it runs one task per process (pane respawned per task, no context kept; assigning to a busy goose worker is refused, use `--new`). Why: README "Worker runtime".
 - Reusing a live worker with a different `--runtime/--model` is refused: use `--new` or `team close`. A worker whose process exited is respawned automatically.
+- `--files` = the only paths the worker may change (anything else is flagged), `--done` = a one-line command that must exit 0 (default: `test:` in the role's flex file). Both go into the task for the worker and are re-checked by `team wait`. Changes are measured on the shared worktree, so give parallel workers in one project separate `--files`.
 - `--new` spawns an extra parallel worker (`<role>-2`, ...). Reuse (default) keeps context.
 - Preflight: `team assign` refuses if `NINEROUTER_API_KEY` is unset in your shell or 9router is down.
 - New runtime/model? Run `tests/runtime-accept.sh <runtime> <model>` first.
 
 ## Rules
+- The user's surface stays tiny: talking to you, `./install.sh` once, `team ui`. Everything else is yours. A new feature works by default, needs no setup, adds no required command/env var/dependency, and its failures say what to run.
 - Never read or print API keys. Key lives only in the `NINEROUTER_API_KEY` env var of the shell running claude (passed into worker panes by `team`).
 - Each product is its own git repo under `projects/` (gitignored here). Improve the framework by editing `agents/`, `bin/team`, this file; commit here.
 - Only touch tmux panes tagged `@team`. Use `team ls`, `team close <name> [role]`.

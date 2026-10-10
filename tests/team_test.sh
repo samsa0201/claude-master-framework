@@ -13,7 +13,7 @@ tmux kill-server 2>/dev/null
 tmux new-session -d -s t -x 220 -y 60
 export TMUX_PANE=$(tmux list-panes -t t -F '#{pane_id}' | head -1)
 check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then echo "ok - $name"; else echo "FAIL - $name"; fail=1; fi; }
-waits() { "$T" wait "$1" "${2:-20}"; }          # prints done|timeout|dead
+waits() { "$T" wait "$1" "${2:-20}" | head -1; }   # first line only: done|timeout|dead (facts follow it)
 out() { cat "$TEAM_PROJECTS/$1/.team/out/$2.md"; }
 
 "$T" new p1 >/dev/null
@@ -45,10 +45,10 @@ check "no frontmatter leaks into prompt" bash -c "! grep -q '^model:' '$TEAM_PRO
 check "flex without frontmatter is whole body" bash -c "printf 'PLAIN-FLEX\n' > '$TEAM_PROJECTS/p2/.team/roles/docs.md'; i=\$('$T' assign p2 docs x --runtime fake); '$T' wait \$i 20 >/dev/null; grep -q PLAIN-FLEX '$TEAM_PROJECTS/p2/.team/out/'\$i.md"
 "$T" new p3 >/dev/null
 id=$("$T" assign p3 dev "FAKE_DIE" --runtime fake)
-r=$("$T" wait "$id" 20); rc=$?
+r=$("$T" wait "$id" 20); rc=$?; r=${r%%$'\n'*}
 check "crashed worker -> dead" test "$r/$rc" = "dead/2"
 id=$("$T" assign p3 qc "FAKE_HANG" --runtime fake)
-r=$("$T" wait "$id" 2); rc=$?
+r=$("$T" wait "$id" 2); rc=$?; r=${r%%$'\n'*}
 check "hung worker -> timeout" test "$r/$rc" = "timeout/1"
 pn=$(tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$id" '$2==i{print $1}')
 check "qwen default timeout 900" test "$(tmux show-option -pqv -t "$pn" @timeout)" = 900
@@ -143,8 +143,58 @@ check "new excludes .team from git" git -C "$TEAM_PROJECTS/gx" check-ignore -q .
 ida=$("$T" assign w1 dev "FAKE_HANG" --runtime fake); sleep 1
 idb=$("$T" assign w1 dev "FAKE_HANG" --runtime fake)
 check "wait on superseded id in live pane -> timeout" test "$(waits "$ida" 3)" = timeout
+# verify: the contract (--files, --done, test: in the flex file) and the checks run when a worker says done
+"$T" new v1 >/dev/null; V="$TEAM_PROJECTS/v1"; mkdir -p "$V/src"; printf 'seed\n' > "$V/a.txt"
+git -C "$V" add -A; git -C "$V" -c user.email=t@t -c user.name=t commit -qm seed
+vw() { "$T" wait "$1" 20; }
+id=$("$T" assign v1 dev-a "add a file FAKE_WRITE=src/new.txt" --runtime fake --files src/ --done "test -f src/new.txt")
+out=$(vw "$id")
+check "verify OK: change in scope, done command passes" bash -c '[[ "$1" == done* && "$1" == *"verify: OK"* && "$1" == *"1 file changed"* && "$1" == *"done command passed"* ]]' _ "$out"
+check "wait still prints exactly done on the first line" test "$(head -1 <<<"$out")" = done
+check "contract, snapshot and verify files are written" bash -c 'cd "$1/.team/out" && test -s "$2.contract" -a -s "$2.base" -a -s "$2.verify"' _ "$V" "$id"
+check "task file states the scope and the done command" bash -c 'grep -q "Change only these paths.*src" "$1" && grep -q "test -f src/new.txt" "$1"' _ "$V/.team/tasks/$id.md"
+check "screen of the finished task is kept" test -s "$V/.team/logs/$id.md"
+id=$("$T" assign v1 dev-b "FAKE_WRITE=src/in.txt FAKE_WRITE=oops.txt" --runtime fake --files src/ --done "true")
+out=$(vw "$id")
+check "verify FAIL: file outside the allowed scope is named" bash -c '[[ "$1" == *"verify: FAIL"* && "$1" == *"outside the allowed scope"* && "$1" == *oops.txt* && "$1" != *"src/in.txt,"* ]]' _ "$out"
+id=$("$T" assign v1 dev-c "FAKE_WRITE=src/c.txt" --runtime fake --done "echo boom; exit 3")
+out=$(vw "$id")
+check "verify FAIL: failing done command shows exit code and its output" bash -c '[[ "$1" == *"verify: FAIL"* && "$1" == *"exit 3"* && "$1" == *boom* ]]' _ "$out"
+id=$("$T" assign v1 dev-d "nothing to do" --runtime fake)
+out=$(vw "$id")
+check "verify WARN: dev task with no changes and no test command" bash -c '[[ "$1" == *"verify: WARN"* && "$1" == *"no files changed"* && "$1" == *"no test command"* ]]' _ "$out"
+printf -- '---\ntest: test -f a.txt\n---\nnotes\n' > "$V/.team/roles/dev-e.md"
+id=$("$T" assign v1 dev-e "FAKE_WRITE=src/e.txt" --runtime fake)
+out=$(vw "$id")
+check "test: from the role's flex file is the default done command" bash -c '[[ "$1" == *"verify: OK"* && "$1" == *"done command passed"* ]]' _ "$out"
+id=$("$T" assign v1 pm "FAKE_NORESULT" --runtime fake)
+out=$(vw "$id")
+check "verify FAIL: .done without a result file" bash -c '[[ "$1" == *"verify: FAIL"* && "$1" == *"no result file"* ]]' _ "$out"
+id=$("$T" assign v1 pm "FAKE_WRITE=docs/prd.md" --runtime fake --files docs/)
+out=$(vw "$id")
+check "non-dev role with files in scope and nothing else configured: OK, no test warning" bash -c '[[ "$1" == *"verify: OK"* && "$1" != *"no test command"* ]]' _ "$out"
+printf 'x\n' > "$V/pre.txt"; echo more >> "$V/a.txt"            # uncommitted work that exists before the task starts
+id=$("$T" assign v1 dev-f "FAKE_WRITE=src/f.txt" --runtime fake --files src/ --done true)
+out=$(vw "$id")
+check "work done before the task is not blamed on it" bash -c '[[ "$1" == *"verify: OK"* && "$1" == *"1 file changed"* ]]' _ "$out"
+id=$("$T" assign v1 dev-g "FAKE_WRITE=pre.txt FAKE_WRITE=src/g.txt" --runtime fake --files src/ --done true)
+out=$(vw "$id")
+check "editing an already-dirty file is seen as a change" bash -c '[[ "$1" == *"verify: FAIL"* && "$1" == *"pre.txt"* ]]' _ "$out"
+id=$("$T" assign v1 dev-h "FAKE_WRITE=src/h.txt FAKE_COMMIT" --runtime fake --files src/ --done true)
+out=$(vw "$id")
+check "a commit by the worker still counts as its changes" bash -c '[[ "$1" == *"verify: FAIL"* ]] && [[ "$1" == *"outside the allowed scope"* ]]' _ "$out"   # the commit also swept pre.txt/a.txt in
+id=$("$T" assign v1 dev-i "FAKE_WRITE=src/i.txt" --runtime fake --done "echo x >> $V/runs.log")
+vw "$id" >/dev/null; vw "$id" >/dev/null
+check "a second wait on a finished task does not run the done command again" test "$(wc -l < "$V/runs.log")" = 1
+check "--files rejects absolute paths and .." bash -c '! "$1" assign v1 dev "x" --runtime fake --files /etc 2>/dev/null && ! "$1" assign v1 dev "x" --runtime fake --files ../x 2>/dev/null' _ "$T"
+id=$("$T" assign v1 dev-j "FAKE_HANG" --runtime fake)
+out=$("$T" wait "$id" 2); rc=$?
+check "timeout: first line, last change, pane tail, screen kept" bash -c '[[ "$(head -1 <<<"$1")" == timeout && "$2" = 1 && "$1" == *"last changed"* && "$1" == *"fake worker: working on"* ]] && test -s "$3"' _ "$out" "$rc" "$V/.team/logs/$id.md"
+id=$("$T" assign v1 dev-k "FAKE_DIE" --runtime fake)
+out=$("$T" wait "$id" 20); rc=$?
+check "dead: first line, pane tail" bash -c '[[ "$(head -1 <<<"$1")" == dead && "$2" = 2 && "$1" == *"fake worker: working on"* ]]' _ "$out" "$rc"
 # team ui builds the dashboard on demand (ui/build.sh), then serves it. Fake studio root; fake npm installs a fake pinned bun.
-U=$(mktemp -d); mkdir -p "$U/ui/web/src" "$U/fakebin"; cp "$R/ui/build.sh" "$U/ui/"
+U=$(mktemp -d); mkdir -p "$U/ui/web/src" "$U/fakebin" "$U/lib"; cp "$R/ui/build.sh" "$U/ui/"; cp "$R/lib/verify.sh" "$U/lib/"
 echo 'import sys; print("SERVED", sys.argv[1])' > "$U/ui/serve.py"; echo one > "$U/ui/web/src/a.ts"
 echo '{"packageManager": "bun@1.3.14"}' > "$U/ui/web/package.json"
 fakebun() { mkdir -p "$(dirname "$1")"; cat > "$1" <<B

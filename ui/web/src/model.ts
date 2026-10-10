@@ -12,7 +12,7 @@ export interface Worker {
   taskCount: number
 }
 
-export interface Stats { total: number; done: number; active: number; stale: number }
+export interface Stats { total: number; done: number; active: number; stale: number; failed: number }
 export interface ProjectSummary { name: string; active: number; stale: number; total: number; last: number }
 
 export const statsOf = (tasks: Task[]): Stats => ({
@@ -20,6 +20,7 @@ export const statsOf = (tasks: Task[]): Stats => ({
   done: tasks.filter((t) => t.status === 'done').length,
   active: tasks.filter((t) => t.status === 'working').length,
   stale: tasks.filter((t) => t.status === 'stale').length,
+  failed: tasks.filter((t) => t.verify?.status === 'fail').length, // finished, but its checks failed
 })
 
 export const tasksOf = (s: StudioState, project: string): Task[] => s.tasks.filter((t) => t.proj === project)

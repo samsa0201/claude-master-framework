@@ -58,6 +58,9 @@ class UiApiTest(unittest.TestCase):
         write(f"{d}/.team/tasks/demo-dev-120000.md", "# Task demo-dev-120000 (role: dev) (worker: dev)\nYou are acting as: dev.\nBuild the thing\n")
         write(f"{d}/.team/out/demo-dev-120000.md", "all built\n")
         write(f"{d}/.team/out/demo-dev-120000.done")
+        write(f"{d}/.team/out/demo-dev-120000.verify", "fail\t1 file outside the allowed scope · result written\nchanged: a.ts, b.ts\noutside scope (src/): b.ts\n")
+        write(f"{d}/.team/logs/demo-dev-120000.md", "# Worker screen of demo-dev-120000 (done, now)\n\n~~~~~~text\n$ opencode\n~~~~~~\n")
+        write(f"{d}/.team/out/demo-qa-130000.verify", "garbage without a status\n")   # a bad file must not break /api/state
         write(f"{d}/.team/tasks/demo-qa-130000.md", "# Task demo-qa-130000 (role: qa) (worker: qa-2)\nYou are acting as: qa.\nVerify it\n")
         # fresh: git repo with no commit yet (right after `team new`)
         write(f"{P}/fresh/a.txt", "fresh file\n"), os.makedirs(f"{P}/fresh/.team"), sh(f"{P}/fresh", "init", "-q")
@@ -102,6 +105,10 @@ class UiApiTest(unittest.TestCase):
         self.assertEqual(done["title"], "Build the thing")
         self.assertEqual(done["summary"], "all built")
         self.assertEqual((stale["status"], stale["seat"]), ("stale", "qa-2"))   # no pane, no .done
+        self.assertEqual(done["verify"], {"status": "fail", "summary": "1 file outside the allowed scope · result written",
+                                          "details": "changed: a.ts, b.ts\noutside scope (src/): b.ts"})
+        self.assertTrue(done["log"])
+        self.assertEqual((stale["verify"], stale["log"]), (None, False))
         self.assertEqual((s["live"], s["panes"]), ([], []))
 
     def test_term_unknown_pane(self):
@@ -110,13 +117,14 @@ class UiApiTest(unittest.TestCase):
     # ── docs ──
     def test_files_listing_whitelist(self):
         paths = {f["path"] for f in self.get("/api/projects/demo/files")[1]["files"]}
-        self.assertEqual(paths, {"docs/prd.md", "docs/big.md", ".team/roles/dev.md",
+        self.assertEqual(paths, {"docs/prd.md", "docs/big.md", ".team/roles/dev.md", ".team/logs/demo-dev-120000.md",
                                  ".team/tasks/demo-dev-120000.md", ".team/tasks/demo-qa-130000.md", ".team/out/demo-dev-120000.md"})
 
     def test_read_doc(self):
         status, d = self.get("/api/projects/demo/file?path=docs/prd.md")
         self.assertEqual((status, d["text"], d["truncated"]), (200, "# PRD\n", False))
         self.assertEqual(self.get("/api/projects/demo/file?path=.team/out/demo-dev-120000.md")[1]["text"], "all built\n")
+        self.assertIn("$ opencode", self.get("/api/projects/demo/file?path=.team/logs/demo-dev-120000.md")[1]["text"])
 
     def test_read_doc_truncates(self):
         d = self.get("/api/projects/demo/file?path=docs/big.md")[1]

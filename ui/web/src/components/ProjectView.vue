@@ -37,6 +37,7 @@ const view = computed(() => TAB_VIEW[route.tab])
         </span>
         <span v-if="stats.active" class="stat active"><b>{{ stats.active }}</b> active</span>
         <span v-if="stats.stale" class="stat stale"><b>{{ stats.stale }}</b> stale</span>
+        <span v-if="stats.failed" class="stat failed" title="Tasks that said done but failed their checks"><b>{{ stats.failed }}</b> failed check{{ stats.failed === 1 ? '' : 's' }}</span>
       </div>
     </div>
     <nav class="tabs" aria-label="Project sections">
@@ -60,6 +61,7 @@ h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
 .stat b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .stat.active b, .stat.active { color: var(--accent); }
 .stat.stale b, .stat.stale { color: var(--warn); }
+.stat.failed b, .stat.failed { color: var(--err); }
 .prog { display: inline-flex; align-items: center; gap: 8px; }
 .bar { width: 90px; height: 6px; border-radius: 99px; background: var(--border); overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--ok); border-radius: 99px; transition: width 0.4s; }

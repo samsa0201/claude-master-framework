@@ -13,7 +13,7 @@ HOSTS = {"localhost", "127.0.0.1", "::1"} | {h for h in os.environ.get("TEAM_UI_
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")   # a project dir name; never contains a slash or starts with a dot
 SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
-DOC_DIRS = ("docs", ".team/roles", ".team/tasks", ".team/out")   # the only places a .md can be read from
+DOC_DIRS = ("docs", ".team/roles", ".team/tasks", ".team/out", ".team/logs")   # the only places a .md can be read from
 MAX_DOC = 512 * 1024        # bytes of one document
 MAX_GIT = 1024 * 1024       # bytes of one git response
 MAX_UNTRACKED = 50          # untracked files shown as "new file" diffs
@@ -62,6 +62,17 @@ def term(tag, lines=80):
 
 
 # ── tasks ──
+def read_verify(path):  # .team/out/<id>.verify written by `team wait`: "<ok|warn|fail>\t<summary>" then detail lines
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            raw = f.read(4096)
+    except OSError:
+        return None
+    head, _, details = raw.partition("\n")
+    status, _, summary = head.partition("\t")
+    return {"status": status, "summary": summary, "details": details.strip()} if status in ("ok", "warn", "fail") else None
+
+
 def title_of(path):
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -105,6 +116,9 @@ def state():
         # desk = worker pane (web-dev-2, ...), so parallel --new workers of one role don't share a seat
         t.setdefault("seat", t["worker"][len(t["proj"]) + 1:] if t["worker"] else t["role"])
         t["status"] = "done" if t["end"] else ("working" if t["worker"] else "stale")
+        team_dir = os.path.join(PROJ, t["proj"], ".team")
+        t["verify"] = read_verify(os.path.join(team_dir, "out", t["id"] + ".verify"))
+        t["log"] = os.path.exists(os.path.join(team_dir, "logs", t["id"] + ".md"))   # saved screen of the worker pane
     projects = sorted(os.path.basename(os.path.dirname(d)) for d in team_dirs)
     return {"tasks": sorted(tasks.values(), key=lambda t: t["start"]), "live": sorted(set(live.values())),
             "panes": sorted(team_panes()), "projects": projects}

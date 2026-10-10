@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] | wait <id> [secs] | ls | close <proj> [role] | display start|stop | ui [port]
+# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] [--files a,b/] [--done "<cmd>"] | wait <id> [secs] | ls | close <proj> [role] | display start|stop | ui [port]
 # Workers = a coding-agent CLI (adapter agents/runtime/<R>.sh, default opencode) in tmux PANES of the window you run claude in (tagged @team=<proj>-<role>).
 set -euo pipefail
 ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
@@ -33,6 +33,7 @@ pane_of() { tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v n="$1" '$2==n{p
 header() { # <pane> <id> <icon> <task text>
   tmux set-option -p -t "$1" @tid "$2"; tmux set-option -p -t "$1" @task "$3 ${4:0:70}"
 }
+source "$ROOT/lib/verify.sh"   # task contract + verification (snapshot at assign, checks when a worker says done)
 cmd=${1:-}; shift || true
 case $cmd in
 new)
@@ -47,13 +48,16 @@ attach) # existing repo: isolated git worktree on a new branch, main checkout un
   printf '.team/\ndocs/feature*.md\n' >> "$(git -C "$d" rev-parse --git-path info/exclude)"  # keep studio files out of their diff
   echo "$d" ;;
 assign)
-  proj=$1 role=$2 task=$3; shift 3; d=$(P "$proj"); ropt= mopt= newp=
-  while [ $# -gt 0 ]; do case $1 in --runtime) ropt=$2; shift 2 ;; --model) mopt=$2; shift 2 ;; --new) newp=1; shift ;; *) die "unknown flag $1" ;; esac; done
+  proj=$1 role=$2 task=$3; shift 3; d=$(P "$proj"); ropt= mopt= newp= files= donecmd=
+  while [ $# -gt 0 ]; do case $1 in --runtime) ropt=$2; shift 2 ;; --model) mopt=$2; shift 2 ;; --new) newp=1; shift ;; --files) files=$2; shift 2 ;; --done) donecmd=$2; shift 2 ;; *) die "unknown flag $1" ;; esac; done
   [[ $role =~ ^[a-z][a-z0-9-]*$ ]] || die "role must be lowercase-with-dashes (e.g. dev-fe)"
   [ -d "$d" ] || die "no project: $d"
   id="$proj-$role-$(date +%H%M%S)"
   n=2; while [ -e "$d/.team/tasks/$id.md" ]; do id="${id%-[0-9]}-$n"; n=$((n+1)); done   # same-second assigns must not overwrite each other's task
   a=$(base_of "$role"); flex="$d/.team/roles/$role.md"
+  [[ $files != /* && $files != *..* && $files != *,/* ]] || die "--files: paths relative to the project, no '..' (e.g. src/,README.md)"
+  [[ $donecmd != *$'\n'* ]] || die "--done must be a single line"
+  [ -n "$donecmd" ] || donecmd=$(fm "$flex" test || true)   # default done command: test: in the role's flex file
   runtime=$(pick runtime "$ropt" opencode)
   model=$(pick model "$mopt" fidt/qwen3.8-flash)
   browser=$(pick browser "" none)
@@ -79,15 +83,19 @@ assign)
   fi
   [ -z "$pane" ] || { pr=$(tmux show-option -pqv -t "$pane" @runtime); pm=$(tmux show-option -pqv -t "$pane" @model)
     [ "$pr/$pm" = "$runtime/$model" ] || die "worker $tag runs $pr/$pm; use --new or 'team close $proj $role' to switch"; }
+  extra=
+  [ -z "$files" ] || extra+=$'\n'"## Scope"$'\n'"Change only these paths (anything else is reported as out of scope): ${files//,/, }"$'\n'
+  [ -z "$donecmd" ] || extra+=$'\n'"## Done when"$'\n'"This command must exit 0 (the lead runs it again after you finish): \`$donecmd\`"$'\n'
   cat > "$d/.team/tasks/$id.md" <<T
 # Task $id (role: $role) (worker: ${tag#$proj-})
 You are acting as: $role.
 $task
-
+$extra
 ## When done (in this order)
 1. Write your result summary to .team/out/$id.md
 2. Then run: touch .team/out/$id.done
 T
+  write_contract "$d" "$id" "$role" "$files" "$donecmd"   # before the worker gets the message: the snapshot is the "before"
   title=$(head -1 <<<"$task")
   if [ -n "$pane" ]; then   # reuse live worker: follow-up message
     tmux send-keys -t "$pane" -l "$msg"; sleep 0.3; tmux send-keys -t "$pane" Enter
@@ -109,23 +117,33 @@ T
     tmux select-layout -t "$pane" main-vertical   # claude stays big on the left, workers stacked right
   fi
   echo "$id" ;;
-wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone without .done
+wait)  # first line: done (0) | timeout (1) | dead (2). Then the facts: verify result on done, what the pane shows on timeout/dead.
   pn() { local f; f=$(ls "$PROJ"/*/.team/out/"$1".pane 2>/dev/null | head -1 || true)   # pane recorded at assign (a reused pane's @tid moves on)
     if [ -n "$f" ]; then local q; q=$(cat "$f"); tmux display -p -t "$q" '#{pane_id}' 2>/dev/null || true
     else tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$1" '$2==i{print $1}' | head -1; fi; }
+  stuck() { # <pane or empty> <id> <why>: what the lead needs to decide (nudge, reassign, switch model) without another tool call
+    local f pd; f=$(ls "$PROJ"/*/.team/tasks/"$2".md 2>/dev/null | head -1 || true); pd=${f%/.team/tasks/*}
+    if [ -z "$1" ] || [ -z "$f" ]; then echo "  pane is gone: no screen to show"; return 0; fi
+    screen_log "$1" "$pd" "$2" "$3"
+    echo "  pane output last changed $((SECONDS - lastchg))s ago"
+    echo "  pane tail (last 15 lines; whole screen in .team/logs/$2.md):"; pane_tail "$1" 15 | sed 's/^/    /'; }
   p=$(pn "$1"); lim=${2:-}
   [ -n "$lim" ] || { [ -n "$p" ] && lim=$(tmux show-option -pqv -t "$p" @timeout); }   # inside || so set -e ignores an empty p
-  lim=${lim:-900}
+  lim=${lim:-900}; lastchg=$SECONDS; sig=
   for ((i=0; i<lim; i++)); do
     f=$(ls "$PROJ"/*/.team/out/"$1".done 2>/dev/null | head -1 || true)
     if [ -n "$f" ]; then
-      p=$(pn "$1"); [ -n "$p" ] && { t=$(tmux show-option -pqv -t "$p" @task); header "$p" "$1" "✓" "${t#* }"; }
-      echo done; exit 0
+      pd=${f%/.team/out/*}; p=$(pn "$1")
+      if [ -n "$p" ]; then t=$(tmux show-option -pqv -t "$p" @task); header "$p" "$1" "✓" "${t#* }"; screen_log "$p" "$pd" "$1" done; fi
+      echo done
+      if [ -f "${f%.done}.verify" ]; then show_verify "${f%.done}.verify"; else verify_task "$pd" "$1" || true; fi   # once: later waits must not re-judge a tree that moved on
+      exit 0
     fi
     p=$(pn "$1")
-    if [ -z "$p" ] || [ "$(tmux show-option -pqv -t "$p" @dead)" = 1 ]; then echo dead; exit 2; fi
+    if [ -z "$p" ] || [ "$(tmux show-option -pqv -t "$p" @dead)" = 1 ]; then echo dead; stuck "$p" "$1" dead; exit 2; fi
+    if [ $((i % 5)) = 0 ]; then s=$(tmux capture-pane -p -t "$p" 2>/dev/null | cksum || true); [ "$s" = "$sig" ] || { sig=$s; lastchg=$SECONDS; }; fi
     sleep 1
-  done; echo timeout; exit 1 ;;
+  done; echo timeout; stuck "$(pn "$1")" "$1" timeout; exit 1 ;;
 display) case ${1:-} in start) display_start ;; stop) display_stop ;; *) die "team display start|stop" ;; esac ;;
 ui)    "$ROOT/ui/build.sh" || { [ -f "$ROOT/ui/dist/index.html" ] && echo "dashboard rebuild failed: serving the previous build" >&2 || die "dashboard not built (see above)"; }
        exec python3 "$ROOT/ui/serve.py" "${1:-7777}" ;;   # read-only dashboard: workers, tasks, docs, diffs, terminals

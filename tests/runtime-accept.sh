@@ -24,7 +24,7 @@ seed() {   # fresh sample repo per task
 }
 run() {   # run <proj> <task text> -> prints done|timeout|dead
   local id; id=$("$T" assign "$1" dev "$2" --runtime "$RT" --model "$M") || { echo "assign-failed"; return; }
-  "$T" wait "$id"; "$T" close "$1" >/dev/null
+  "$T" wait "$id" | head -1; "$T" close "$1" >/dev/null
 }
 res=()
 row() { # row <name> <r> <grader-status>: PASS only if worker finished (done) and grader passed

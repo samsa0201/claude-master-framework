@@ -5,6 +5,7 @@ import { ago, duration } from '../format'
 import type { Worker } from '../model'
 import StatusBadge from './StatusBadge.vue'
 import Icon from './Icon.vue'
+import VerifyBadge from './VerifyBadge.vue'
 
 const props = defineProps<{ worker: Worker }>()
 defineEmits<{ terminal: [tag: string] }>()
@@ -27,6 +28,7 @@ const meta = computed(() => {
       <StatusBadge :kind="worker.state" />
     </span>
     <span class="title" :class="{ muted: !task }">{{ task ? task.title || task.summary || task.id : 'Standing by' }}</span>
+    <VerifyBadge v-if="task?.verify" :verify="task.verify" class="vbadge" />
     <span class="meta muted">
       <span>{{ meta }}</span>
       <span v-if="worker.taskCount > 1">{{ worker.taskCount }} tasks</span>
@@ -43,5 +45,6 @@ const meta = computed(() => {
 .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .name { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
 .title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; min-height: 2.9em; }
+.vbadge { align-self: flex-start; }
 .meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
 </style>

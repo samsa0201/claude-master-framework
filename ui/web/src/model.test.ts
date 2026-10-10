@@ -3,7 +3,7 @@ import type { StudioState, Task } from './api'
 import { projectSummaries, statsOf, workersOf } from './model'
 
 const task = (o: Partial<Task>): Task => ({
-  id: 'x', proj: 'p', title: 't', summary: '', start: 100, end: null, role: 'dev', seat: 'dev', worker: null, status: 'stale', ...o,
+  id: 'x', proj: 'p', title: 't', summary: '', start: 100, end: null, role: 'dev', seat: 'dev', worker: null, status: 'stale', verify: null, log: false, ...o,
 })
 const st = (o: Partial<StudioState>): StudioState => ({ tasks: [], live: [], panes: [], projects: [], ...o })
 
@@ -43,7 +43,9 @@ test('a project name that prefixes another does not leak its panes', () => {
 
 test('statsOf', () => {
   const ts = [task({ status: 'done' }), task({ status: 'working' }), task({ status: 'working' }), task({ status: 'stale' })]
-  expect(statsOf(ts)).toEqual({ total: 4, done: 1, active: 2, stale: 1 })
+  expect(statsOf(ts)).toEqual({ total: 4, done: 1, active: 2, stale: 1, failed: 0 })
+  const failing = task({ status: 'done', verify: { status: 'fail', summary: 'tests failed', details: '' } })
+  expect(statsOf([...ts, failing, task({ status: 'done', verify: { status: 'ok', summary: '', details: '' } })]).failed).toBe(1)
 })
 
 test('projectSummaries: recent first, task-less projects last by name', () => {

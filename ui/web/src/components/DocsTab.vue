@@ -16,6 +16,7 @@ const GROUPS = [
   { key: '.team/roles', label: 'Role notes' },
   { key: '.team/tasks', label: 'Task briefs' },
   { key: '.team/out', label: 'Reports' },
+  { key: '.team/logs', label: 'Worker screens' },
 ]
 const DOC_ORDER = ['idea', 'prd', 'architecture', 'ux', 'feature'] // the usual reading order; everything else alphabetical after
 
