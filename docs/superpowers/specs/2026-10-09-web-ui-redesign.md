@@ -61,8 +61,8 @@ ui/web/                # nguồn: package.json, bun.lock, vite.config.ts, index.
   src/{App.vue,api.ts,diff.ts,format.ts,components/*.vue}
 ui/dist/               # output build, gitignored
 ```
-- Build: `cd ui/web && bun install --frozen-lockfile && bun run build`. `install.sh` chạy bước này nếu có `bun` (không thì in hướng dẫn cài).
-- `team ui`: tự build khi thiếu `ui/dist/` hoặc khi nguồn trong `ui/web/` mới hơn bản build; build lỗi mà đã có bản cũ thì phục vụ bản cũ, chưa có bản nào thì dừng và in lệnh build (không phục vụ trang trống). `bun.lock` tạo bằng bun 1.3.x để bun cũ vẫn đọc được.
+- Build: xem `ui/build.sh` bên dưới; `install.sh` cũng gọi nó.
+- `team ui` gọi `ui/build.sh`: cài bun ghim trong `package.json` (`packageManager`) vào `.runtime/bun` bằng npm, build khi hash nội dung `ui/web/` khác `ui/dist/.stamp` (không dùng mtime vì checkout làm mtime sai). npm lỗi → bun trên PATH; build lỗi mà đã có bản cũ → phục vụ bản cũ; chưa có bản nào → dừng. Không commit build output; không dùng Docker (dashboard cần tmux và `projects/` của host, xem thảo luận trong PR).
 - Dev: `bun run dev` (Vite, proxy `/api` → `127.0.0.1:7777`, cần `team ui` chạy song song).
 - Xóa: `ui/index.html`, `ui/helm.png`, `ui/vaultboy.gif`. Sửa mô tả "cute live office view" ở `bin/team`, `skills/studio/SKILL.md`, `README.md`; thêm `ui/dist/` và `ui/web/node_modules/` vào `.gitignore`.
 

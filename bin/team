@@ -33,14 +33,6 @@ pane_of() { tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v n="$1" '$2==n{p
 header() { # <pane> <id> <icon> <task text>
   tmux set-option -p -t "$1" @tid "$2"; tmux set-option -p -t "$1" @task "$3 ${4:0:70}"
 }
-ui_build() {   # (re)build the dashboard when it is missing or older than its sources; a failed rebuild still serves the previous build
-  local dist="$ROOT/ui/dist/index.html"
-  if [ -f "$dist" ] && [ -z "$(find "$ROOT/ui/web" -name node_modules -prune -o -type f -newer "$dist" -print -quit)" ]; then return; fi
-  echo "building the dashboard (ui/web)..." >&2
-  if command -v bun >/dev/null && (cd "$ROOT/ui/web" && bun install --frozen-lockfile >&2 && bun run build >&2); then return; fi
-  [ -f "$dist" ] && { echo "dashboard rebuild failed: serving the previous build" >&2; return; }
-  die "dashboard not built: install bun (https://bun.sh), then: cd $ROOT/ui/web && bun install && bun run build"
-}
 cmd=${1:-}; shift || true
 case $cmd in
 new)
@@ -135,7 +127,7 @@ wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone wi
     sleep 1
   done; echo timeout; exit 1 ;;
 display) case ${1:-} in start) display_start ;; stop) display_stop ;; *) die "team display start|stop" ;; esac ;;
-ui)    ui_build
+ui)    "$ROOT/ui/build.sh" || { [ -f "$ROOT/ui/dist/index.html" ] && echo "dashboard rebuild failed: serving the previous build" >&2 || die "dashboard not built (see above)"; }
        exec python3 "$ROOT/ui/serve.py" "${1:-7777}" ;;   # read-only dashboard: workers, tasks, docs, diffs, terminals
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;
 close) tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$1" -v r="${2:-}" 'r=="" && index($2,p"-")==1 {print $1} r!="" && ($2==p"-"r || $2 ~ ("^"p"-"r"-[0-9]+$")) {print $1}' | xargs -r -n1 tmux kill-pane -t ;;
