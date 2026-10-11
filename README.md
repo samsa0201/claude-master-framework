@@ -36,3 +36,11 @@ Chromium của QA chạy với `--no-sandbox` (AppArmor trên máy này chặn s
 
 - noVNC/x11vnc không có mật khẩu và chỉ lắng nghe trên localhost: ổn trên máy một người dùng.
 - goose: `base_url` của provider cố định là localhost:20128 (NINEROUTER_URL không áp dụng cho goose).
+
+## Port theo project (cô lập mức 1)
+
+Mỗi project có một dải 20 port cố định (mặc định từ 20000, đổi bằng `TEAM_PORT_BASE`/`TEAM_PORT_SPAN`/`TEAM_PORT_MAX`), ghi ở `projects/.ports` (flock, không trùng khi `team new` song song) và `projects/<tên>/.team/ports.env`: `PORT_WEB`, `PORT_API`, `PORT_DB`, `PORT_CACHE`, `PORT_AUX1`, `PORT_AUX2`, `COMPOSE_PROJECT_NAME`. File này được đưa vào env của mọi pane worker và liệt kê trong task file kèm quy tắc "chỉ dùng các port này, strict mode".
+- `team ports <tên>`: bảng port + trạng thái, kèm dòng `ssh -L ...` để chạy trên Mac.
+- `team ports <tên> kill` / `team close <tên>`: dừng process còn nghe trên dải port của project, chỉ khi cwd của nó nằm trong thư mục project.
+- Đây là quy ước mềm (worker vẫn có thể bind port khác). Mức 2 (bubblewrap) và mức 3 (network namespace) sẽ ép thật; hợp đồng "port lấy từ env" giữ nguyên.
+- `bin/portscan.py` đọc `/proc` nên không cần `ss`/`lsof`.
