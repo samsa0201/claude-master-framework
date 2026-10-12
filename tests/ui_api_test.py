@@ -229,6 +229,45 @@ class UiApiTest(unittest.TestCase):
         self.assertEqual(self.get("/api/nope"), (404, {"error": "no such endpoint"}))
         self.assertEqual(self.get("/api/projects/demo/zzz")[0], 404)
 
+    def _evil(self, name):   # repo whose host-side git would run box-planted commands; returns the marker path
+        d = os.path.join(serve.PROJ, name)
+        os.makedirs(d); sh(d, "init", "-q"); write(f"{d}/a.txt", "1\n"); sh(d, "add", "."); sh(d, "commit", "-q", "-m", "c")
+        write(f"{d}/a.txt", "2\n")   # modified: diff must clean-filter it
+        marker = os.path.join(self.tmp, f"{name}-PWNED")
+        return d, marker
+
+    def test_git_ignores_planted_commondir(self):
+        d, marker = self._evil("evilcommon")
+        evil = os.path.join(self.tmp, "evilcommon.git")
+        shutil.copytree(f"{d}/.git", evil)   # a working copy of the repo, plus a filter driver
+        subprocess.run(["git", "config", "-f", f"{evil}/config", "filter.x.clean", f"sh -c 'touch {marker}; cat'"], check=True)
+        write(f"{d}/.gitattributes", "*.txt filter=x\n")
+        write(f"{d}/.git/commondir", evil + "\n")
+        self.assertEqual(subprocess.run(["git", "-C", d, "config", "filter.x.clean"], capture_output=True).returncode, 0)  # plain git is hijacked
+        for path in ("/api/projects/evilcommon/diff", "/api/projects/evilcommon/log"):
+            self.assertEqual(self.get(path)[0], 200, path)
+        self.assertFalse(os.path.exists(marker), "dashboard git ran a planted filter")
+
+    def test_git_ignores_submodule_config(self):
+        d, marker = self._evil("evilsub")
+        sub = f"{d}/sub"; os.makedirs(sub); sh(sub, "init", "-q"); write(f"{sub}/b.txt", "1\n"); sh(sub, "add", "."); sh(sub, "commit", "-q", "-m", "s")
+        subprocess.run(["git", "-C", sub, "config", "filter.x.clean", f"sh -c 'touch {marker}; cat'"], check=True)
+        write(f"{sub}/.gitattributes", "*.txt filter=x\n"); write(f"{sub}/b.txt", "2\n")
+        sha = subprocess.run(["git", "-C", sub, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+        sh(d, "update-index", "--add", "--cacheinfo", f"160000,{sha},sub")
+        write(f"{d}/.gitmodules", '[submodule "sub"]\n\tpath = sub\n\turl = ./sub\n'); sh(d, "add", ".gitmodules"); sh(d, "commit", "-q", "-m", "sub")
+        self.assertEqual(self.get("/api/projects/evilsub/diff")[0], 200)
+        self.assertFalse(os.path.exists(marker), "dashboard git recursed into a planted submodule")
+
+    def test_git_dirs_worktree_and_plain(self):
+        d, _ = self._evil("wtmain")
+        wt = os.path.join(serve.PROJ, "wt1"); sh(d, "worktree", "add", "-q", "-b", "feat/wt1", wt)
+        gd, cd = serve.git_dirs(wt)
+        self.assertEqual((os.path.realpath(gd), os.path.realpath(cd)), (os.path.realpath(f"{d}/.git/worktrees/wt1"), os.path.realpath(f"{d}/.git")))
+        write(f"{d}/.git/commondir", "/somewhere/else\n")
+        self.assertEqual(serve.git_dirs(d), (f"{d}/.git", f"{d}/.git"))
+        self.assertEqual(self.get("/api/projects/wt1/log")[0], 200)
+
 
 if __name__ == "__main__":
     unittest.main()

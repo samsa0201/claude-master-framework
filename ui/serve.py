@@ -161,10 +161,24 @@ def read_doc(pd, rel):
 
 
 # ── git ──
-def git(pd, *args, ok=(0,)):  # → (text, truncated). Hardened: no repo-configured fsmonitor, pager, prompts or index locks.
-    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
+def git_dirs(pd):  # → (git dir, common dir) from files a box cannot change: a box may plant .git/commondir to redirect config
+    dot = os.path.join(pd, ".git")
+    if not os.path.isfile(dot):
+        return dot, dot   # plain repo: never follow a commondir file
+    with open(dot) as f:   # worktree: the pointer and its commondir are read-only mounts in the box
+        gd = f.read().strip().removeprefix("gitdir:").strip()
+    gd = os.path.normpath(os.path.join(pd, gd))
+    with open(os.path.join(gd, "commondir")) as f:
+        cd = os.path.normpath(os.path.join(gd, f.read().strip()))
+    return gd, cd
+
+
+def git(pd, *args, ok=(0,)):  # → (text, truncated). Hardened: trusted git dirs, no fsmonitor, hooks, submodule recursion, pager, prompts or index locks.
+    gd, cd = git_dirs(pd)
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_DIR=gd, GIT_COMMON_DIR=cd, GIT_WORK_TREE=pd)
     try:
-        r = subprocess.run(["git", "-C", pd, "-c", "core.fsmonitor=false", "-c", "core.quotepath=off", "--no-pager", *args],
+        r = subprocess.run(["git", "-C", pd, "-c", "core.fsmonitor=false", "-c", "core.quotepath=off", "-c", "core.hooksPath=/dev/null",
+                            "-c", "diff.ignoreSubmodules=all", "-c", "submodule.recurse=false", "--no-pager", *args],
                            capture_output=True, timeout=GIT_TIMEOUT, env=env)
     except subprocess.TimeoutExpired:
         raise ApiError(504, "git timed out")
