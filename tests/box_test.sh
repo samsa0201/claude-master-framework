@@ -179,5 +179,13 @@ wait $q1; r1=$?; wait $q2; r2=$?
 check "parallel box_up: both succeed" test "$r1/$r2" = 0/0
 check "parallel box_up: one box, REJECT loaded" bash -c "[ \$(docker ps -a --format '{{.Names}}' | grep -cx studiotest-b9) = 1 ] && fwq b9 STUDIO | grep -q REJECT"
 bt box_down b9
+# --- a symlink planted in .team (older rw layout) never becomes a mount ---
+"$T" new bl >/dev/null; dl=$(readlink -f "$TEAM_PROJECTS/bl")
+mkdir -p "$M/victim"; rm -rf "$dl/.team/out"; ln -s "$M/victim" "$dl/.team/out"
+o=$("$T" exec bl true 2>&1)
+check "symlinked .team/out: box refused" bash -c '[[ "$1" == *"is a symlink"* ]]' _ "$o"
+check "symlinked .team/out: no box created" not docker container inspect studiotest-bl
+rm "$dl/.team/out"; "$T" close bl
+
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

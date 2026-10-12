@@ -51,6 +51,9 @@ box_up() {   # <proj>: make sure the box runs; fail-closed (dies, never falls ba
   box_ok || die "docker unavailable: workers need a box (TEAM_SANDBOX=none runs them unsandboxed)"
   git -C "$d" rev-parse --git-dir >/dev/null 2>&1 || die "box needs a git repo: $d"
   if ! box_running "$p"; then
+    for x in .git .git/config .git/hooks .team .team/out .team/logs .team/run; do   # links an older (rw .team) box may have planted
+      [ -L "$d/$x" ] && die "refusing box: $d/$x is a symlink (remove it, a mount would follow it to the host)"
+    done
     $DOCKER rm -f "$n" "$n-ts" >/dev/null 2>&1 || true
     img=$(box_image) || exit 1
     $DOCKER network inspect "$n" >/dev/null 2>&1 || $DOCKER network create --ipv6=false "$n" >/dev/null || die "docker network create $n failed"

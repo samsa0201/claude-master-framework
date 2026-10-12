@@ -82,6 +82,7 @@ assign)
     display_start
   fi
   [ "$SANDBOX" = none ] || box_up "$proj"   # fail-closed: no box, no worker (before any task file or pane exists)
+  rm -f "$d/.team/role-$role.md"   # never write through a planted link
   { body "$a"; [ -f "$flex" ] && { printf '\n## Project notes (from lead)\n'; body "$flex"; }; } > "$d/.team/role-$role.md"
   tag="$proj-$role"; pane=$(pane_of "$tag")
   [ -n "$newp" ] && { n=2; while [ -n "$(pane_of "$tag-$n")" ]; do n=$((n+1)); done; tag="$tag-$n"; pane=; }   # --new: extra parallel worker
