@@ -47,7 +47,7 @@ box_up() {   # <proj>: make sure the box runs; fail-closed (dies, never falls ba
   if ! box_running "$p"; then
     $DOCKER rm -f "$n" "$n-ts" >/dev/null 2>&1 || true
     img=$(box_image) || exit 1
-    $DOCKER network inspect "$n" >/dev/null 2>&1 || $DOCKER network create "$n" >/dev/null || die "docker network create $n failed"
+    $DOCKER network inspect "$n" >/dev/null 2>&1 || $DOCKER network create --ipv6=false "$n" >/dev/null || die "docker network create $n failed"
     mapfile -t mv < <(box_mounts "$d")
     path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     [ -x "$HOME/.bun/bin/bun" ] && path="$HOME/.bun/bin:$path"
@@ -70,17 +70,16 @@ box_down() {   # <proj>: remove box, sidecar, network and home volume (best effo
   $DOCKER volume rm "$n-home" >/dev/null 2>&1 || true
 }
 EGRESS_DEFAULT=(registry.npmjs.org registry.yarnpkg.com pypi.org files.pythonhosted.org)
-nr_port() { local u=${NINEROUTER_URL:-http://localhost:20128/v1}; u=${u#*://}; u=${u%%/*}; [[ $u == *:* ]] && echo "${u##*:}" || echo 80; }
+nr_port() { local u=${NINEROUTER_URL:-http://localhost:20128/v1} d=80; [[ $u == https:* ]] && d=443; u=${u#*://}; u=${u%%/*}; [[ $u == *:* ]] && echo "${u##*:}" || echo $d; }
 box_gw() { $DOCKER network inspect -f '{{(index .IPAM.Config 0).Gateway}}' "$(bx "$1")"; }
 box_egress() { local f="$PROJ/.box/$1.egress"; [ -f "$f" ] && awk '!/^[[:space:]]*(#|$)/{print $1}' "$f"; return 0; }   # outside every mount: workers can't edit it
 box_fw() {   # <proj> [--count]: (re)load egress rules from a short-lived root helper with NET_ADMIN; the box itself has no caps
-  local p=$1; shift; local img; img=$(box_image) || return 1
+  local p=$1; shift; local img eg; img=$(box_image) || return 1; mapfile -t eg < <(box_egress "$p")   # array: entries like *.x must not glob
   if [ "${1:-}" = --count ]; then
     $DOCKER run --rm -i --user 0 --network "container:$(bx "$p")" --cap-add NET_ADMIN "$img" bash -s -- --count < "$ROOT/box/fw.sh"
   else
-    # shellcheck disable=SC2046  # one host per word
     $DOCKER run --rm -i --user 0 --network "container:$(bx "$p")" --cap-add NET_ADMIN "$img" \
-      bash -s -- "$BOX_UID" "$(box_gw "$p")" "$(nr_port)" "${EGRESS_DEFAULT[@]}" $(box_egress "$p") < "$ROOT/box/fw.sh"
+      bash -s -- "$BOX_UID" "$(box_gw "$p")" "$(nr_port)" "${EGRESS_DEFAULT[@]}" "${eg[@]}" < "$ROOT/box/fw.sh"
   fi
 }
 box_fwd() {   # <proj>: 127.0.0.1:<9router port> in the box -> 9router on the host; adapters keep NINEROUTER_URL=localhost (goose can't change it)

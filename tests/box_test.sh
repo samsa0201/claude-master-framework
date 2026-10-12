@@ -93,6 +93,14 @@ mkdir -p "$TEAM_PROJECTS/.box"; printf '# test\nexample.com\n' > "$TEAM_PROJECTS
 bt box_up b1
 check "allowlist file opens example.com" can b1 example.com 443
 check "count reports rejected packets" bash -c "can b1 '$GW' 28129; [ \"\$(bt box_fw b1 --count)\" -ge 1 ]"
+check "box network has IPv6 disabled" bash -c "[ \"\$(docker network inspect -f '{{.EnableIPv6}}' studiotest-b1)\" = false ]"
+check "no global IPv6 address in the box" in_box b1 "! grep -v '^fe80\|^00000000000000000000000000000001' /proc/net/if_inet6 | grep -q ."
+check "nr_port: https without port is 443" bash -c "[ \"\$(NINEROUTER_URL=https://x/v1 bt nr_port)\" = 443 ]"
+check "nr_port: http without port is 80" bash -c "[ \"\$(NINEROUTER_URL=http://x/v1 bt nr_port)\" = 80 ]"
+check "nr_port: explicit port wins" bash -c "[ \"\$(NINEROUTER_URL=http://localhost:28128/v1 bt nr_port)\" = 28128 ]"
+printf '*\n' > "$TEAM_PROJECTS/.box/b1.egress"   # glob char in the allowlist must reach the helper literally
+check "allowlist entries are not glob-expanded" bash -c "cd '$H' && [[ \$(bt box_fw b1 2>&1) == *'cannot resolve *'* ]]"
+printf '# test\nexample.com\n' > "$TEAM_PROJECTS/.box/b1.egress"; bt box_fw b1
 mkdir -p "$TEAM_PROJECTS/b3"; git -C "$TEAM_PROJECTS/b3" init -q
 o=$(NINEROUTER_URL=http://localhost:notaport/v1 bt box_up b3 2>&1); rc=$?
 export o rc   # $o holds iptables' quotes: pass by env, not through the bash -c string
