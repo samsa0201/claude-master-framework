@@ -88,3 +88,12 @@ box_fwd() {   # <proj>: 127.0.0.1:<9router port> in the box -> 9router on the ho
   $DOCKER exec -d "$n" socat "TCP-LISTEN:$port,bind=127.0.0.1,fork,reuseaddr" "TCP:$(box_gw "$1"):$port"
   sleep 0.3
 }
+box_env() {   # rt_env lines -> lines for the box: data/state dirs move into the box home ($ROOT/.runtime/data is not mounted)
+  sed -e 's|^XDG_DATA_HOME=.*|XDG_DATA_HOME=/box/home/.local/share|' -e 's|^XDG_STATE_HOME=.*|XDG_STATE_HOME=/box/home/.local/state|'
+}
+box_cmd() {   # <proj> <dir> <cmd> <env names...>: docker exec line (bash syntax); values come from the pane env, never the command line
+  local p=$1 d=$2 c=$3 k s; shift 3
+  s="$DOCKER exec -it -u $BOX_UID:$BOX_GID -w $(printf %q "$d")"
+  for k in "$@"; do s+=" -e $k"; done
+  echo "$s $(printf %q "$(bx "$p")") bash -c $(printf %q "$c")"
+}

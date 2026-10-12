@@ -4,7 +4,7 @@
 set -uo pipefail
 R=$(cd "$(dirname "$0")/.." && pwd)
 export TEAM_REAL_TMUX=$(command -v tmux) PATH="$R/tests/shim:$PATH" TEAM_PROJECTS=$(mktemp -d)
-export TEAM_PORT_BASE=28000 TEAM_PORT_MAX=29000   # private port range: 50 blocks of 20
+export TEAM_SANDBOX=none   # plumbing only; the real box is covered by tests/box_test.sh
 export TEAM_DISPLAY=:97 TEAM_VNC_PORT=5997 TEAM_WEB_PORT=6077
 unset TMUX
 T="$R/bin/team"; fail=0
@@ -145,7 +145,7 @@ ida=$("$T" assign w1 dev "FAKE_HANG" --runtime fake); sleep 1
 idb=$("$T" assign w1 dev "FAKE_HANG" --runtime fake)
 check "wait on superseded id in live pane -> timeout" test "$(waits "$ida" 3)" = timeout
 # team ui builds the dashboard on demand (ui/build.sh), then serves it. Fake studio root; fake npm installs a fake pinned bun.
-U=$(mktemp -d); mkdir -p "$U/ui/web/src" "$U/fakebin"; cp "$R/ui/build.sh" "$U/ui/"
+U=$(mktemp -d); mkdir -p "$U/ui/web/src" "$U/fakebin"; cp "$R/ui/build.sh" "$U/ui/"; mkdir -p "$U/bin"; cp "$R/bin/box.sh" "$U/bin/"
 echo 'import sys; print("SERVED", sys.argv[1])' > "$U/ui/serve.py"; echo one > "$U/ui/web/src/a.ts"
 echo '{"packageManager": "bun@1.3.14"}' > "$U/ui/web/package.json"
 fakebun() { mkdir -p "$(dirname "$1")"; cat > "$1" <<B
@@ -189,38 +189,20 @@ check "npm fails: falls back to bun on PATH" bash -c '[[ "$1" == *"SERVED 7005"*
 echo five > "$U/ui/web/src/a.ts"; rm -rf "$U/ui/dist" "$U/.runtime"; out=$(FAKE_NPM_FAIL=1 FAKE_BUN_FAIL=1 uirun 7006); rc=$?
 check "no dist and no working bun -> error, not served" bash -c '[ "$2" -ne 0 ] && [[ "$1" != *SERVED* ]]' _ "$out" "$rc"
 rm -rf "$U"
-# --- ports: one block per project, injected into workers, freed on close ---
-pv() { sed -n "s/^$2=//p" "$TEAM_PROJECTS/$1/.team/ports.env"; }
-check "new writes ports.env with a block in range" bash -c "[ \"$(pv p1 PORT_BASE)\" -ge 28000 ] && [ \"$(pv p1 PORT_WEB)\" = \"$(pv p1 PORT_BASE)\" ] && [ \"$(pv p1 COMPOSE_PROJECT_NAME)\" = p1 ]"
-check "blocks of different projects never overlap" bash -c "[ \"$(pv p1 PORT_BASE)\" != \"$(pv p2 PORT_BASE)\" ] && [ \$(( $(pv p2 PORT_BASE) - $(pv p1 PORT_BASE) )) -ne 0 ]"
-b1=$(pv p1 PORT_BASE); "$T" new pdup >/dev/null; rm -rf "$TEAM_PROJECTS/pdup"
-check "slot is stable: registry keeps the project's block" bash -c "grep -c '^p1 ' '$TEAM_PROJECTS/.ports' | grep -qx 1 && [ \"$b1\" = \"$(pv p1 PORT_BASE)\" ]"
-id=$("$T" assign p1 pm "ports" --runtime fake); waits "$id" >/dev/null
-check "worker env carries PORT_* and COMPOSE_PROJECT_NAME" grep -q "ports web=$(pv p1 PORT_WEB) db=$(pv p1 PORT_DB) compose=p1" "$TEAM_PROJECTS/p1/.team/out/$id.md"
-check "task file lists the reserved ports + strict rule" bash -c "grep -q 'PORT_WEB=$(pv p1 PORT_WEB)' '$TEAM_PROJECTS/p1/.team/tasks/$id.md' && grep -q 'strict mode' '$TEAM_PROJECTS/p1/.team/tasks/$id.md'"
-# a project that predates ports gets a block on its first assign
-mkdir -p "$TEAM_PROJECTS/old/.team/"{tasks,out,roles}
-id=$("$T" assign old pm "x" --runtime fake); waits "$id" >/dev/null
-check "legacy project gets ports.env at assign" test -n "$(pv old PORT_WEB)"
-# a block that is busy on the host is skipped at allocation
-nb=$(( 28000 + $(awk 'END{print $2+1}' "$TEAM_PROJECTS/.ports") * 20 ))
-python3 -m http.server "$nb" --bind 127.0.0.1 >/dev/null 2>&1 & hs=$!; sleep 1
-"$T" new pbusy >/dev/null
-check "busy block skipped" bash -c "[ \"$(pv pbusy PORT_BASE)\" -gt $nb ]"
-kill $hs 2>/dev/null
-# ports table + kill: only listeners whose cwd is inside the project
-check "ports table lists names and ssh forward hint" bash -c "o=\$('$T' ports p1); grep -q '^web ' <<<\"\$o\" && grep -q '^db ' <<<\"\$o\" && grep -q 'ssh -L $(pv p1 PORT_WEB):localhost:$(pv p1 PORT_WEB)' <<<\"\$o\""
-(cd "$TEAM_PROJECTS/p1"; python3 -m http.server "$(pv p1 PORT_WEB)" --bind 127.0.0.1 >/dev/null 2>&1 & echo $! > "$TEAM_PROJECTS/in.pid"); sleep 1
-check "ports shows the listener" bash -c "'$T' ports p1 | grep -q '^web .*listening'"
-(cd /tmp; python3 -m http.server "$(pv p1 PORT_API)" --bind 127.0.0.1 >/dev/null 2>&1 & echo $! > "$TEAM_PROJECTS/out.pid"); sleep 1
-"$T" ports p1 kill 2>/dev/null
-sleep 0.5
-check "ports kill stops the in-project listener" bash -c "'$T' ports p1 | grep -q '^web .* free'"
-check "ports kill leaves outside-cwd listener alone" kill -0 "$(cat "$TEAM_PROJECTS/out.pid")"
-kill "$(cat "$TEAM_PROJECTS/out.pid")" 2>/dev/null
-(cd "$TEAM_PROJECTS/p1"; python3 -m http.server "$(pv p1 PORT_DB)" --bind 127.0.0.1 >/dev/null 2>&1 & echo $! > "$TEAM_PROJECTS/in.pid"); sleep 1
-"$T" close p1 2>/dev/null; sleep 0.5
-check "close <proj> frees its ports" bash -c "'$T' ports p1 | grep -q '^db .* free'"
-check "exhausted range: clear error, nothing left behind" bash -c "o=\$(TEAM_PORT_MAX=28020 '$T' new pfull 2>&1); [ \$? -ne 0 ] && grep -q 'no free port block' <<<\"\$o\" && [ ! -e '$TEAM_PROJECTS/pfull' ]"
+# --- box wiring without docker (real box: tests/box_test.sh) ---
+"$T" new bx1 >/dev/null
+id=$("$T" assign bx1 pm "env" --runtime fake); waits "$id" >/dev/null
+check "task file: private network + default ports, no port block" bash -c "grep -q 'default ports' '$TEAM_PROJECTS/bx1/.team/tasks/$id.md' && ! grep -q PORT_ '$TEAM_PROJECTS/bx1/.team/tasks/$id.md'"
+check "no ports.env, no registry" bash -c "[ ! -e '$TEAM_PROJECTS/bx1/.team/ports.env' ] && [ ! -e '$TEAM_PROJECTS/.ports' ]"
+check "fail-closed: no docker -> assign refused, no pane, no task" bash -c "n=\$(ls '$TEAM_PROJECTS/bx1/.team/tasks' | wc -l); o=\$(TEAM_SANDBOX=box TEAM_DOCKER=false '$T' assign bx1 dev x --runtime fake 2>&1); [ \$? -ne 0 ] && grep -q 'docker unavailable' <<<\"\$o\" && ! '$T' ls | grep -q ' bx1-dev\$' && [ \$(ls '$TEAM_PROJECTS/bx1/.team/tasks' | wc -l) = \$n ]"
+check "unknown TEAM_SANDBOX rejected" bash -c "! TEAM_SANDBOX=bwrap '$T' ls"
+check "box_env moves data/state dirs into the box home" bash -c "
+  ROOT='$R' PROJ=/tmp; P() { :; }; die() { exit 1; }; source '$R/bin/box.sh'
+  o=\$(printf 'XDG_DATA_HOME=/x\nXDG_STATE_HOME=/y\nA=1\n' | box_env)
+  [ \"\$o\" = \$'XDG_DATA_HOME=/box/home/.local/share\nXDG_STATE_HOME=/box/home/.local/state\nA=1' ]"
+check "box_cmd: env by name only, quoted command, box user" bash -c "
+  ROOT='$R' PROJ=/tmp; P() { :; }; die() { exit 1; }; TEAM_BOX_PREFIX=sx; source '$R/bin/box.sh'
+  c=\$(box_cmd p1 '/a b' \"echo 'hi there'\" K1 K2)
+  [[ \$c == *'exec -it -u '\$(id -u):\$(id -g)* && \$c == *' -e K1 -e K2 '* && \$c == *'sx-p1'* && \$c != *'K1='* ]] && eval \"set -- \${c#* bash -c }\" && [ \"\$1\" = \"echo 'hi there'\" ]"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

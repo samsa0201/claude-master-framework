@@ -106,5 +106,13 @@ o=$(NINEROUTER_URL=http://localhost:notaport/v1 bt box_up b3 2>&1); rc=$?
 export o rc   # $o holds iptables' quotes: pass by env, not through the bash -c string
 check "rules fail -> box removed, error says fail-closed" bash -c "[ \$rc -ne 0 ] && [[ \$o == *fail-closed* ]] && ! docker ps -a --format '{{.Names}}' | grep -qx studiotest-b3"
 
+# --- team assign runs the worker inside the box ---
+tmux kill-server 2>/dev/null; tmux new-session -d -s t -x 220 -y 60
+export TMUX_PANE=$(tmux list-panes -t t -F '#{pane_id}' | head -1)
+id=$("$T" assign b1 pm "hello" --runtime fake)
+check "fake worker ran inside the box" bash -c "[ \"\$('$T' wait $id 60)\" = done ] && grep -qx 'env home=/box/home' '$TEAM_PROJECTS/b1/.team/out/$id.md'"
+check "worker output owned by the host user" test "$(stat -c %u "$TEAM_PROJECTS/b1/.team/out/$id.md")" = "$U"
+"$T" close b1
+check "team close <proj> removes the box" bash -c "! docker ps -a --format '{{.Names}}' | grep -qx studiotest-b1"
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
