@@ -59,6 +59,7 @@ box_up() {   # <proj>: make sure the box runs; fail-closed (dies, never falls ba
     for x in user.name user.email; do   # identity only, no credentials: commit yes, push no
       git config --global "$x" >/dev/null && $DOCKER exec "$n" git config --global "$x" "$(git config --global "$x")"
     done
+    box_ts "$p"
   fi
   box_fw "$p" || { $DOCKER rm -f "$n" "$n-ts" >/dev/null 2>&1; die "egress rules failed: box $n removed (fail-closed)"; }
   box_fwd "$p"
@@ -102,4 +103,19 @@ box_ps() {   # <proj> <dir>: "<name> running|stopped" per app started with team 
     [ -e "$f" ] || continue; n=$(basename "$f" .pid)
     if box_running "$1" && $DOCKER exec "$(bx "$1")" kill -0 -- "-$(cat "$f")" 2>/dev/null; then echo "$n running"; else echo "$n stopped"; fi
   done
+}
+
+TS_IMAGE=tailscale/tailscale:v1.102.3
+TS_KEY=${TEAM_TS_KEY:-$HOME/.config/studio/ts-authkey}
+box_ts() {   # <proj>: tailscale sidecar in the box netns (root there, so not egress-filtered); no key -> warn only, not a security boundary
+  local p=$1 n; n=$(bx "$p")
+  [ -s "$TS_KEY" ] || { echo "warning: no $TS_KEY: $p is not on tailnet (team url $p shows the ssh -L fallback)" >&2; return 0; }
+  # key: env of the sidecar only (separate pid namespace from the box), passed by name, never on the command line
+  TS_AUTHKEY=$(cat "$TS_KEY") $DOCKER run -d --name "$n-ts" --network "container:$n" \
+    -e TS_AUTHKEY -e TS_HOSTNAME="$p" -e TS_USERSPACE=true -e TS_STATE_DIR=/tmp "$TS_IMAGE" >/dev/null ||
+    echo "warning: tailscale sidecar failed for $p (docker logs $n-ts)" >&2
+}
+box_ts_name() {   # <proj>: the sidecar's MagicDNS name (may get a -N suffix on collision), empty if none
+  $DOCKER exec "$(bx "$1")-ts" tailscale status --json 2>/dev/null |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' 2>/dev/null || true
 }

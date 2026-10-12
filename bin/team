@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] | wait <id> [secs] | ls | close <proj> [role] | run <proj> [<name> "<cmd>"] | stop <proj> <name> | exec <proj> "<cmd>" | egress <proj> | display start|stop | ui [port]
+# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] | wait <id> [secs] | ls | close <proj> [role] | run <proj> [<name> "<cmd>"] | stop <proj> <name> | exec <proj> "<cmd>" | egress <proj> | url <proj> | https <proj> <port> | display start|stop | ui [port]
 # Workers = a coding-agent CLI (adapter agents/runtime/<R>.sh, default opencode) in tmux PANES of the window you run claude in (tagged @team=<proj>-<role>).
 set -euo pipefail
 ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
@@ -167,6 +167,13 @@ egress) p=${1:?team egress <proj>}; [ "$SANDBOX" = box ] || die "team egress nee
        echo "rejected packets: $(box_fw "$p" --count)"   # before the reload, which resets the counter
        box_fw "$p" || die "egress rules failed"
        echo "allow list: $PROJ/.box/$p.egress (host[:port] per line, default port 443)" ;;
+url)   p=${1:?team url <proj>}; box_running "$p" || die "box not running: $p"
+       ip=$($DOCKER inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(bx "$p")"); f=$(box_ts_name "$p")
+       [ -n "$f" ] && { echo "tailnet: http://${f%%.*}:<port>"; echo "https:   https://$f   (team https $p <port>)"; }
+       echo "box ip:  $ip"; echo "fallback: ssh -L <port>:$ip:<port> <linux-host>" ;;
+https) p=${1:?team https <proj> <port>}; port=${2:?team https <proj> <port>}
+       $DOCKER inspect "$(bx "$p")-ts" >/dev/null 2>&1 || die "no tailscale sidecar for $p (key file: $TS_KEY)"
+       $DOCKER exec "$(bx "$p")-ts" tailscale serve --bg "$port" ;;
 ui)    "$ROOT/ui/build.sh" || { [ -f "$ROOT/ui/dist/index.html" ] && echo "dashboard rebuild failed: serving the previous build" >&2 || die "dashboard not built (see above)"; }
        exec python3 "$ROOT/ui/serve.py" "${1:-7777}" ;;   # read-only dashboard: workers, tasks, docs, diffs, terminals
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;

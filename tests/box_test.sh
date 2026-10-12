@@ -138,5 +138,14 @@ check "stop validates the name" not "$T" stop b2 ../x
 check "run reports a failed start with the log" bash -c "o=\$('$T' run b2 bad 'exit 1' 2>&1); [ \$? -ne 0 ] && grep -q '.team/logs/bad.log' <<<\"\$o\" && ! grep -q '^started' <<<\"\$o\""
 "$T" close b2; "$T" close b4
 check "close removes the app pid files" bash -c "! ls '$TEAM_PROJECTS'/b4/.team/run/*.pid 2>/dev/null"
+# --- tailscale: no key -> warning only; url falls back to ssh -L ---
+"$T" new b5 >/dev/null
+o=$("$T" exec b5 true 2>&1)
+check "no tailscale key: warning, box still works" bash -c '[[ "$1" == *"not on tailnet"* ]]' _ "$o"
+check "no sidecar without a key" not docker inspect studiotest-b5-ts
+o=$("$T" url b5)
+check "url shows box ip and ssh -L fallback" bash -c '[[ "$1" == *"box ip: "* && "$1" == *"ssh -L <port>:"* ]]' _ "$o"
+check "https without sidecar: clear error" bash -c "o=\$('$T' https b5 5173 2>&1); [ \$? -ne 0 ] && grep -q 'no tailscale sidecar' <<<\"\$o\""
+"$T" close b5
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
