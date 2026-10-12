@@ -268,6 +268,11 @@ class UiApiTest(unittest.TestCase):
         self.assertEqual(serve.git_dirs(d), (f"{d}/.git", f"{d}/.git"))
         self.assertEqual(self.get("/api/projects/wt1/log")[0], 200)
 
+    def test_git_dirs_bad_pointer(self):
+        d = os.path.join(serve.PROJ, "badptr"); os.makedirs(d); write(f"{d}/.git", "gitdir: /nonexistent/gd\n")
+        st, body = self.get("/api/projects/badptr/log")
+        self.assertEqual(st, 500); self.assertIn("bad worktree pointer", json.dumps(body))
+
 
 if __name__ == "__main__":
     unittest.main()

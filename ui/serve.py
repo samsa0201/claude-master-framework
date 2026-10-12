@@ -165,11 +165,14 @@ def git_dirs(pd):  # → (git dir, common dir) from files a box cannot change: a
     dot = os.path.join(pd, ".git")
     if not os.path.isfile(dot):
         return dot, dot   # plain repo: never follow a commondir file
-    with open(dot) as f:   # worktree: the pointer and its commondir are read-only mounts in the box
-        gd = f.read().strip().removeprefix("gitdir:").strip()
-    gd = os.path.normpath(os.path.join(pd, gd))
-    with open(os.path.join(gd, "commondir")) as f:
-        cd = os.path.normpath(os.path.join(gd, f.read().strip()))
+    try:
+        with open(dot) as f:   # worktree: the pointer and its commondir are read-only mounts in the box
+            gd = f.read().strip().removeprefix("gitdir:").strip()
+        gd = os.path.normpath(os.path.join(pd, gd))
+        with open(os.path.join(gd, "commondir")) as f:
+            cd = os.path.normpath(os.path.join(gd, f.read().strip()))
+    except OSError:
+        raise ApiError(500, "bad worktree pointer")
     return gd, cd
 
 

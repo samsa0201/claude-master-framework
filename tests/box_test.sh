@@ -43,6 +43,8 @@ check "root in the box has no capabilities" not docker exec -u 0 studiotest-b1 c
 check "git commit works in the box" in_box b1 "cd '$TEAM_PROJECTS/b1' && git add w && git -c user.name=t -c user.email=t@t commit -qm t"
 check "repo config is read-only" not in_box b1 "echo '[core]' >> '$TEAM_PROJECTS/b1/.git/config'"
 check "repo hooks are read-only" not in_box b1 "echo x > '$TEAM_PROJECTS/b1/.git/hooks/pre-commit'"
+check "config.worktree is read-only (plain repo)" not in_box b1 "echo x > '$TEAM_PROJECTS/b1/.git/config.worktree'"
+check "empty config.worktree does not break git" in_box b1 "cd '$TEAM_PROJECTS/b1' && git status -s >/dev/null"
 check ".git cannot be swapped for another repo" not in_box b1 "mv '$TEAM_PROJECTS/b1/.git' '$TEAM_PROJECTS/b1/g2'"
 check "box_up again keeps the running box" bash -c "c=\$(docker inspect -f '{{.Id}}' studiotest-b1); bt box_up b1 && [ \"\$(docker inspect -f '{{.Id}}' studiotest-b1)\" = \"\$c\" ]"
 # attached worktree: commits land in the main repo, whose config/hooks stay read-only
@@ -56,6 +58,7 @@ check "worktree .git pointer is read-only" not in_box a1 "echo 'gitdir: /tmp/x' 
 check "worktree commondir is read-only" not in_box a1 "echo /tmp > '$M/.git/worktrees/a1/commondir'"
 check "box cannot plant commondir in the main repo" not in_box a1 "echo /tmp > '$M/.git/commondir'"
 check "box cannot add files at the main git dir root" not in_box a1 "touch '$M/.git/x'"
+check "worktree config.worktree is read-only" not in_box a1 "echo x > '$M/.git/worktrees/a1/config.worktree'"
 check "worktree can create a new branch" in_box a1 "cd '$TEAM_PROJECTS/a1' && git switch -q -c feat/a1-2"
 mkdir -p "$H/stub"; printf '#!/bin/sh\necho /usr/bin/node\n' > "$H/stub/node"; chmod +x "$H/stub/node"
 check "distro node (/usr/bin) does not mount /usr" bash -c "! PATH='$H/stub':\$PATH bt box_mounts '$TEAM_PROJECTS/b1' | grep -q -- '--volume=/usr:'"

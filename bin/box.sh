@@ -31,6 +31,8 @@ box_mounts() {   # <proj dir>: one docker --volume=... per line; host paths keep
   mkdir -p "$g/hooks"   # a missing hooks dir would be writable
   # repo config and hooks run code on the HOST when the lead, the dashboard or the user run git (fsmonitor, filters, hooks)
   echo "--volume=$g/config:$g/config:ro"; echo "--volume=$g/hooks:$g/hooks:ro"
+  [ -e "$gd/config.worktree" ] || : > "$gd/config.worktree"   # read when extensions.worktreeConfig is on (git sparse-checkout): same host-code risk as config
+  echo "--volume=$gd/config.worktree:$gd/config.worktree:ro"
   for x in "$ROOT/.runtime/opencode" "$ROOT/.runtime/goose" "$ROOT/runtime-home"; do [ -e "$x" ] && echo "--volume=$x:$x:ro"; done
   x=$(node_prefix); [ -n "$x" ] && echo "--volume=$x:$x:ro"
   [ -x "$HOME/.bun/bin/bun" ] && echo "--volume=$HOME/.bun/bin/bun:$HOME/.bun/bin/bun:ro"   # not the rest of ~/.bun (9router lives there)
