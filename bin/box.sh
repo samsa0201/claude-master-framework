@@ -21,6 +21,8 @@ box_mounts() {   # <proj dir>: one docker --volume=... per line; host paths keep
   local d=$1 g gd x
   g=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir); gd=$(git -C "$d" rev-parse --path-format=absolute --git-dir)
   echo "--volume=$d:$d"
+  mkdir -p "$d/.team/out" "$d/.team/logs" "$d/.team/run"   # .team is read by the HOST (roles, tasks, role prompts): ro, worker output dirs rw
+  echo "--volume=$d/.team:$d/.team:ro"; for x in out logs run; do echo "--volume=$d/.team/$x:$d/.team/$x"; done
   if [ -f "$d/.git" ]; then   # attached worktree: commits write the main repo's objects/refs; pointers stay fixed
     for x in objects refs logs info; do mkdir -p "$g/$x"; done
     for x in objects refs logs; do echo "--volume=$g/$x:$g/$x"; done   # skeleton, not the whole git dir: the box can't add root files like commondir
@@ -100,10 +102,13 @@ box_cmd() {   # <proj> <dir> <cmd> <env names...>: docker exec line (bash syntax
   for k in "$@"; do s+=" -e $k"; done
   echo "$s $(printf %q "$(bx "$p")") bash -c $(printf %q "$c")"
 }
+box_pid() {   # <pid file>: its pid; fails on links, non-files, non-numbers (run/ is box-writable: never read host files through it)
+  local x; [ ! -L "$1" ] && [ -f "$1" ] || return 1; read -r x < "$1" || true; [[ $x =~ ^[0-9]+$ ]] && echo "$x"
+}
 box_ps() {   # <proj> <dir>: "<name> running|stopped" per app started with team run
-  local f n; for f in "$2"/.team/run/*.pid; do
-    [ -e "$f" ] || continue; n=$(basename "$f" .pid)
-    if box_running "$1" && $DOCKER exec "$(bx "$1")" kill -0 -- "-$(cat "$f")" 2>/dev/null; then echo "$n running"; else echo "$n stopped"; fi
+  local f n x; for f in "$2"/.team/run/*.pid; do
+    [ -e "$f" ] || [ -L "$f" ] || continue; n=$(basename "$f" .pid)
+    if x=$(box_pid "$f") && box_running "$1" && $DOCKER exec "$(bx "$1")" kill -0 -- "-$x" 2>/dev/null; then echo "$n running"; else echo "$n stopped"; fi
   done
 }
 

@@ -28,8 +28,10 @@ display_start() {   # ponytail: one shared display, browser workers run one at a
 display_stop() { for n in web vnc xvfb; do if up "$n"; then kill "$(cat "$RUN/$n.pid")"; for _ in {1..30}; do up "$n" || break; sleep 0.1; done; fi; rm -f "$RUN/$n.pid"; done; }
 browser_busy() {   # task ids of live browser workers without .done
   tmux list-panes -a -F '#{?#{@browser},1,0} #{?#{@dead},1,0} #{@tid}' | awk '$1==1 && $2!=1 {print $3}' |
-    while read -r t; do ls "$PROJ"/*/.team/out/"$t".done >/dev/null 2>&1 || echo "$t"; done
+    while read -r t; do x=$(task_dir "$t"); [ -n "$x" ] && [ -e "$x/.team/out/$t.done" ] || echo "$t"; done
 }
+task_dir() { local f; f=$(ls "$PROJ"/*/.team/tasks/"$1".md 2>/dev/null | head -1) || true; [ -z "$f" ] || echo "${f%/.team/tasks/*}"; }   # project of a task id, from the host-written task file (out/ is box-writable)
+put() { rm -f "$2"; (set -C; echo "$1" > "$2"); }   # write into a box-writable dir: replace a planted link, never follow it
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v n="$1" '$2==n{print $1}' | head -1; }
 # header: pane border shows "role | status task"; window-local, user's global tmux config untouched
 header() { # <pane> <id> <icon> <task text>
@@ -69,6 +71,9 @@ assign)
   browser=$(pick browser "" none)
   case $model in *kCode*) dt=1800 ;; *) dt=900 ;; esac   # kCode upstream can queue 100-200s per request
   timeout=$(pick timeout "" $dt)
+  # flex files are data: these values reach source, tmux and bash arithmetic
+  [[ $runtime =~ ^[a-z0-9-]+$ ]] || die "bad runtime: $runtime"; [[ $model =~ ^[A-Za-z0-9._/:-]+$ ]] || die "bad model: $model"
+  [[ $timeout =~ ^[0-9]+$ ]] || die "bad timeout: $timeout"
   rt="$ROOT/agents/runtime/$runtime.sh"; [ -f "$rt" ] || die "unknown runtime: $runtime (see agents/runtime/)"
   msg="Read .team/tasks/$id.md and do it exactly."
   source "$rt"; rt_preflight
@@ -105,7 +110,7 @@ T
   title=$(head -1 <<<"$task")
   if [ -n "$pane" ]; then   # reuse live worker: follow-up message
     tmux send-keys -t "$pane" -l "$msg"; sleep 0.3; tmux send-keys -t "$pane" Enter
-    header "$pane" "$id" "⏳" "$title"; echo "$pane" > "$d/.team/out/$id.pane"
+    header "$pane" "$id" "⏳" "$title"; put "$pane" "$d/.team/out/$id.pane"
     tmux set-option -p -t "$pane" @timeout "$timeout"
     [ "$browser" != none ] && tmux set-option -p -t "$pane" @browser 1
   else                      # first message goes in as the agent's argument: no startup race
@@ -116,7 +121,7 @@ T
     # bash -c: the pane command is bash syntax; never run it through the user's tmux default-shell (e.g. fish)
     pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" "${envs[@]}" bash -c \
       "$c; tmux set-option -p -t \"\$TMUX_PANE\" @dead 1; read -p 'worker exited, enter to close'")
-    tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"; echo "$pane" > "$d/.team/out/$id.pane"
+    tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"; put "$pane" "$d/.team/out/$id.pane"
     tmux set-option -p -t "$pane" @timeout "$timeout"; tmux set-option -p -t "$pane" @runtime "$runtime"; tmux set-option -p -t "$pane" @model "$model"; tmux set-option -p -t "$pane" @sandbox "$SANDBOX"
     [ "$browser" != none ] && tmux set-option -p -t "$pane" @browser 1
     tmux set-option -w -t "$pane" pane-border-status top
@@ -126,15 +131,15 @@ T
   fi
   echo "$id" ;;
 wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone without .done
-  pn() { local f; f=$(ls "$PROJ"/*/.team/out/"$1".pane 2>/dev/null | head -1 || true)   # pane recorded at assign (a reused pane's @tid moves on)
-    if [ -n "$f" ]; then local q; q=$(cat "$f"); tmux display -p -t "$q" '#{pane_id}' 2>/dev/null || true
+  td=$(task_dir "$1")   # only this task's project: another box can plant <id>.done/.pane in its own out/
+  pn() { local f=$td/.team/out/$1.pane   # pane recorded at assign (a reused pane's @tid moves on)
+    if [ -n "$td" ] && [ -f "$f" ]; then local q; q=$(cat "$f"); tmux display -p -t "$q" '#{pane_id}' 2>/dev/null || true
     else tmux list-panes -a -F '#{pane_id} #{@tid}' | awk -v i="$1" '$2==i{print $1}' | head -1; fi; }
   p=$(pn "$1"); lim=${2:-}
   [ -n "$lim" ] || { [ -n "$p" ] && lim=$(tmux show-option -pqv -t "$p" @timeout); }   # inside || so set -e ignores an empty p
-  lim=${lim:-900}
+  lim=${lim:-900}; [[ $lim =~ ^[0-9]+$ ]] || die "bad wait limit: $lim"   # goes into bash arithmetic
   for ((i=0; i<lim; i++)); do
-    f=$(ls "$PROJ"/*/.team/out/"$1".done 2>/dev/null | head -1 || true)
-    if [ -n "$f" ]; then
+    if [ -n "$td" ] && [ -e "$td/.team/out/$1.done" ]; then
       p=$(pn "$1"); [ -n "$p" ] && { t=$(tmux show-option -pqv -t "$p" @task); header "$p" "$1" "✓" "${t#* }"; }
       echo done; exit 0
     fi
@@ -156,8 +161,8 @@ run)   p=${1:?team run <proj> [<name> \"<cmd>\"]}; d=$(readlink -f "$(P "$p")");
        sleep 0.3; box_ps "$p" "$d" | grep -qx "$2 running" || die "failed to start $2 (see .team/logs/$2.log)"
        echo "started $2 (log: .team/logs/$2.log)" ;;
 stop)  p=${1:?team stop <proj> <name>}; n=${2:?team stop <proj> <name>}; [[ $n =~ ^[a-z][a-z0-9-]*$ ]] || die "bad app name: $n"; f="$(readlink -f "$(P "$p")")/.team/run/$n.pid"
-       [ -f "$f" ] || die "not started: $n"
-       if box_running "$p"; then $DOCKER exec "$(bx "$p")" kill -TERM -- "-$(cat "$f")" 2>/dev/null || true; fi
+       [ -e "$f" ] || [ -L "$f" ] || die "not started: $n"; pid=$(box_pid "$f") || die "bad pid file: $f"
+       if box_running "$p"; then $DOCKER exec "$(bx "$p")" kill -TERM -- "-$pid" 2>/dev/null || true; fi
        echo "stopped $n" ;;   # pid file stays so team run lists it as stopped; a rerun overwrites it
 exec)  p=${1:?team exec <proj> \"<cmd>\"}; d=$(readlink -f "$(P "$p")"); [ -d "$d" ] || die "no project: $d"
        [ "$SANDBOX" = box ] || die "team exec needs the box (TEAM_SANDBOX=none)"

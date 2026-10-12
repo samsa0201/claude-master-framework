@@ -219,5 +219,17 @@ check "attach skips node_modules" test ! -e "$TEAM_PROJECTS/ea/node_modules/x/.e
 check "attach lists what it copied" bash -c '[[ "$1" == *"copied apps/api/.env.local"* && "$1" != *node_modules* ]]' _ "$o"
 check "copied .env stays ignored in the worktree" git -C "$TEAM_PROJECTS/ea" check-ignore -q .env
 git -C "$EM" worktree remove --force "$TEAM_PROJECTS/ea"; rm -rf "$EM"
+# --- host never trusts box-writable .team files (flex frontmatter, cross-project out/) ---
+"$T" new hx >/dev/null; "$T" new hy >/dev/null; MK=$(mktemp -d)
+printf 'touch %s/rt\n' "$MK" > "$TEAM_PROJECTS/hx/evil.sh"
+printf -- '---\nruntime: ../../../../../../../../../../..%s/hx/evil\n---\n' "$TEAM_PROJECTS" > "$TEAM_PROJECTS/hx/.team/roles/dev-a.md"
+check "flex runtime path refused, nothing sourced" bash -c "! '$T' assign hx dev-a x 2>/dev/null && [ ! -e '$MK/rt' ]"
+printf -- '---\ntimeout: PROJ[$(touch %s/to)]\n---\n' "$MK" > "$TEAM_PROJECTS/hx/.team/roles/dev-b.md"
+check "flex timeout expression refused, not evaluated" bash -c "i=\$('$T' assign hx dev-b x --runtime fake 2>/dev/null); [ -z \"\$i\" ] || '$T' wait \"\$i\" >/dev/null 2>&1; [ -z \"\$i\" ] && [ ! -e '$MK/to' ]"
+check "wait refuses a non-numeric limit" bash -c "! '$T' wait nope 'PROJ[\$(touch $MK/w)]' 2>/dev/null && [ ! -e '$MK/w' ]"
+idy=$("$T" assign hy dev "FAKE_HANG" --runtime fake)
+touch "$TEAM_PROJECTS/hx/.team/out/$idy.done"; echo '%999' > "$TEAM_PROJECTS/hx/.team/out/$idy.pane"
+check "done/pane planted in another project are ignored" test "$(waits "$idy" 2)" = timeout
+rm -rf "$MK"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

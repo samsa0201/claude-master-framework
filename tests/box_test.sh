@@ -10,7 +10,7 @@ unset TMUX TEAM_SANDBOX
 T="$R/bin/team"; fail=0; U=$(id -u); H=$(mktemp -d); M=$(mktemp -d); s1=; s2=
 export R U   # helpers below are exported: checks call them through bash -c
 cleanup() {
-  for p in b1 b2 b3 b4 b5 a1; do "$T" close "$p" >/dev/null 2>&1; done
+  for p in b1 b2 b3 b4 b5 b6 b7 b9 a1; do "$T" close "$p" >/dev/null 2>&1; done
   docker rm -f $(docker ps -aq --filter name=studiotest-) >/dev/null 2>&1
   [ -n "$s1" ] && kill "$s1" "$s2" 2>/dev/null; tmux kill-server 2>/dev/null; rm -rf "$TEAM_PROJECTS" "$H" "$M"
 }
@@ -150,5 +150,21 @@ o=$("$T" url b5)
 check "url shows box ip and ssh -L fallback" bash -c '[[ "$1" == *"box ip: "* && "$1" == *"ssh -L <port>:"* ]]' _ "$o"
 check "https without sidecar: clear error" bash -c "o=\$('$T' https b5 5173 2>&1); [ \$? -ne 0 ] && grep -q 'no tailscale sidecar' <<<\"\$o\""
 "$T" close b5
+# --- .team is read-only in the box except out/ logs/ run/; host never follows box-planted links ---
+"$T" new b6 >/dev/null; D6=$TEAM_PROJECTS/b6; bt box_up b6
+check "box cannot write .team/roles" not in_box b6 "touch '$D6/.team/roles/x.md'"
+check "box cannot write .team/role-<role>.md" not in_box b6 "touch '$D6/.team/role-dev.md'"
+check "box cannot write .team/tasks" not in_box b6 "touch '$D6/.team/tasks/x.md'"
+check "box cannot move .team" not in_box b6 "mv '$D6/.team' '$D6/t2'"
+[ -d "$D6/t2" ] && mv "$D6/t2" "$D6/.team"   # RED run: keep the rest of the block meaningful
+check "box can write .team/out, logs, run" in_box b6 "touch '$D6/.team/out/x' '$D6/.team/logs/x' '$D6/.team/run/x'"
+echo orig > "$H/hostpane"
+for s in 0 1 2 3 4 5 6; do in_box b6 "ln -s '$H/hostpane' '$D6/.team/out/b6-pm-$(date -d +${s}sec +%H%M%S).pane'"; done   # host clock: ids to come
+id=$("$T" assign b6 pm "hi" --runtime fake)
+check "planted .pane symlink is replaced, host file untouched" bash -c "[ \"\$(cat '$H/hostpane')\" = orig ] && [ -f '$D6/.team/out/$id.pane' ] && [ ! -L '$D6/.team/out/$id.pane' ]"
+echo 1 > "$H/one"; mkdir -p "$D6/.team/run"; in_box b6 "ln -s '$H/one' '$D6/.team/run/leak.pid'"
+check "run/*.pid symlink to a host file: listed stopped" bash -c "'$T' run b6 | grep -qx 'leak stopped'"
+check "stop refuses a run/*.pid symlink" bash -c "! '$T' stop b6 leak 2>/dev/null && docker exec studiotest-b6 true"
+"$T" close b6
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
