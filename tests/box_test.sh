@@ -131,6 +131,12 @@ check "exec passes the exit code" bash -c "'$T' exec b2 'exit 3'; [ \$? = 3 ]"
 check "exec is firewalled" not "$T" exec b2 "timeout 4 bash -c '</dev/tcp/example.com/443'"
 o=$("$T" egress b2)
 check "egress prints counter and allowlist path" bash -c '[[ "$1" == *"rejected packets: "* && "$1" == *".box/b2.egress"* ]]' _ "$o"
+in_box b2 'sleep 300 >/dev/null 2>&1 & echo $!' > "$TEAM_PROJECTS/b2/.team/run/fake.pid"
+check "pid of a non-group-leader is not an app" bash -c "'$T' run b2 | grep -qx 'fake stopped'"
+check "run <name> without cmd -> usage, not list" bash -c "o=\$('$T' run b2 web 2>&1); [ \$? -ne 0 ] && grep -q 'team run' <<<\"\$o\""
+check "stop validates the name" not "$T" stop b2 ../x
+check "run reports a failed start with the log" bash -c "o=\$('$T' run b2 bad 'exit 1' 2>&1); [ \$? -ne 0 ] && grep -q '.team/logs/bad.log' <<<\"\$o\" && ! grep -q '^started' <<<\"\$o\""
 "$T" close b2; "$T" close b4
+check "close removes the app pid files" bash -c "! ls '$TEAM_PROJECTS'/b4/.team/run/*.pid 2>/dev/null"
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

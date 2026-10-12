@@ -138,15 +138,17 @@ wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone wi
 display) case ${1:-} in start) display_start ;; stop) display_stop ;; *) die "team display start|stop" ;; esac ;;
 run)   p=${1:?team run <proj> [<name> \"<cmd>\"]}; d=$(readlink -f "$(P "$p")"); [ -d "$d" ] || die "no project: $d"
        [ "$SANDBOX" = box ] || die "team run needs the box (TEAM_SANDBOX=none)"
-       if [ $# -lt 3 ]; then box_ps "$p" "$d"; exit 0; fi
+       if [ $# -eq 1 ]; then box_ps "$p" "$d"; exit 0; fi
+       [ $# -eq 3 ] || die "team run <proj> [<name> \"<cmd>\"]"
        [[ $2 =~ ^[a-z][a-z0-9-]*$ ]] || die "name must be lowercase-with-dashes (e.g. web, api)"
        box_up "$p"; mkdir -p "$d/.team/logs" "$d/.team/run"
        box_ps "$p" "$d" | grep -qx "$2 running" && die "$2 already running (team stop $p $2 first)"
        # setsid: own process group, so stop takes the dev server's children too; apps are firewalled like workers
        $DOCKER exec -d -u "$BOX_UID:$BOX_GID" -w "$d" "$(bx "$p")" setsid bash -c 'echo $$ > "$1"; exec bash -c "$2" > "$3" 2>&1' \
          _ "$d/.team/run/$2.pid" "$3" "$d/.team/logs/$2.log"
-       sleep 0.3; echo "started $2 (log: .team/logs/$2.log)" ;;
-stop)  p=${1:?team stop <proj> <name>}; n=${2:?team stop <proj> <name>}; f="$(readlink -f "$(P "$p")")/.team/run/$n.pid"
+       sleep 0.3; box_ps "$p" "$d" | grep -qx "$2 running" || die "failed to start $2 (see .team/logs/$2.log)"
+       echo "started $2 (log: .team/logs/$2.log)" ;;
+stop)  p=${1:?team stop <proj> <name>}; n=${2:?team stop <proj> <name>}; [[ $n =~ ^[a-z][a-z0-9-]*$ ]] || die "bad app name: $n"; f="$(readlink -f "$(P "$p")")/.team/run/$n.pid"
        [ -f "$f" ] || die "not started: $n"
        if box_running "$p"; then $DOCKER exec "$(bx "$p")" kill -TERM -- "-$(cat "$f")" 2>/dev/null || true; fi
        echo "stopped $n" ;;   # pid file stays so team run lists it as stopped; a rerun overwrites it

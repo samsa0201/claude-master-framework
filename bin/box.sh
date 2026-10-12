@@ -64,7 +64,7 @@ box_up() {   # <proj>: make sure the box runs; fail-closed (dies, never falls ba
   box_fwd "$p"
 }
 box_down() {   # <proj>: remove box, sidecar, network and home volume (best effort, quiet)
-  local n; n=$(bx "$1"); box_ok || return 0
+  local n; n=$(bx "$1"); rm -f "$(P "$1")"/.team/run/*.pid; box_ok || return 0   # app pid files die with the box
   $DOCKER rm -f "$n" "$n-ts" >/dev/null 2>&1 || true
   $DOCKER network rm "$n" >/dev/null 2>&1 || true
   $DOCKER volume rm "$n-home" >/dev/null 2>&1 || true
@@ -100,6 +100,6 @@ box_cmd() {   # <proj> <dir> <cmd> <env names...>: docker exec line (bash syntax
 box_ps() {   # <proj> <dir>: "<name> running|stopped" per app started with team run
   local f n; for f in "$2"/.team/run/*.pid; do
     [ -e "$f" ] || continue; n=$(basename "$f" .pid)
-    if box_running "$1" && $DOCKER exec "$(bx "$1")" kill -0 "$(cat "$f")" 2>/dev/null; then echo "$n running"; else echo "$n stopped"; fi
+    if box_running "$1" && $DOCKER exec "$(bx "$1")" kill -0 -- "-$(cat "$f")" 2>/dev/null; then echo "$n running"; else echo "$n stopped"; fi
   done
 }
