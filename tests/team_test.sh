@@ -209,5 +209,15 @@ check "run/exec/egress refuse without the box" bash -c "! '$T' run bx1 web true 
 waits "$("$T" assign sb1 dev "FAKE_HANG" --runtime fake)" 1 >/dev/null
 sp=$("$T" ls | awk '$2=="sb1-dev"{print $1}'); tmux set-option -p -t "$sp" @sandbox box   # as if it had been spawned in box mode
 check "pane reuse across sandbox modes refused, no task file" bash -c "n=\$(ls '$TEAM_PROJECTS/sb1/.team/tasks' | wc -l); o=\$('$T' assign sb1 dev x --runtime fake 2>&1); [ \$? -ne 0 ] && grep -q 'use --new or' <<<\"\$o\" && [ \$(ls '$TEAM_PROJECTS/sb1/.team/tasks' | wc -l) = \$n ]"
+# --- attach copies gitignored .env files from the main checkout ---
+EM=$(mktemp -d); git -C "$EM" init -q; printf '.env*\nnode_modules/\n' > "$EM/.gitignore"; mkdir -p "$EM/apps/api" "$EM/node_modules/x"
+echo A=1 > "$EM/.env"; echo B=2 > "$EM/apps/api/.env.local"; echo C=3 > "$EM/node_modules/x/.env"
+git -C "$EM" add .gitignore; git -C "$EM" -c user.email=t@t -c user.name=t commit -qm init
+o=$("$T" attach ea "$EM" 2>&1)
+check "attach copies gitignored .env files, nested too" bash -c "[ \"\$(cat '$TEAM_PROJECTS/ea/.env')\" = A=1 ] && [ \"\$(cat '$TEAM_PROJECTS/ea/apps/api/.env.local')\" = B=2 ]"
+check "attach skips node_modules" test ! -e "$TEAM_PROJECTS/ea/node_modules/x/.env"
+check "attach lists what it copied" bash -c '[[ "$1" == *"copied apps/api/.env.local"* && "$1" != *node_modules* ]]' _ "$o"
+check "copied .env stays ignored in the worktree" git -C "$TEAM_PROJECTS/ea" check-ignore -q .env
+git -C "$EM" worktree remove --force "$TEAM_PROJECTS/ea"; rm -rf "$EM"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

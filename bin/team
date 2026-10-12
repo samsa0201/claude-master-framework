@@ -35,6 +35,13 @@ pane_of() { tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v n="$1" '$2==n{p
 header() { # <pane> <id> <icon> <task text>
   tmux set-option -p -t "$1" @tid "$2"; tmux set-option -p -t "$1" @task "$3 ${4:0:70}"
 }
+env_copy() {   # <main checkout> <worktree>: gitignored .env* files, same relative paths (the app in the box must match main)
+  git -C "$1" ls-files -z -o -i --exclude-standard -- ':(glob)**/.env*' |
+    while IFS= read -r -d '' f; do
+      [[ $f =~ (^|/)(node_modules|\.garden|\.worktrees)/ ]] && continue
+      mkdir -p "$2/$(dirname "$f")"; cp -p "$1/$f" "$2/$f"; echo "copied $f" >&2
+    done
+}
 cmd=${1:-}; shift || true
 case $cmd in
 new)
@@ -47,7 +54,7 @@ attach) # existing repo: isolated git worktree on a new branch, main checkout un
   git -C "$r" worktree add -q -b "$b" "$d"   # ponytail: git repos only; deps aren't copied, install in the box (team exec)
   mkdir -p "$d"/docs "$d"/.team/{tasks,out,roles}
   printf '.team/\ndocs/feature*.md\n' >> "$(git -C "$d" rev-parse --git-path info/exclude)"  # keep studio files out of their diff
-  echo "$d" ;;
+  env_copy "$r" "$d"; echo "$d" ;;
 assign)
   proj=$1 role=$2 task=$3; shift 3; d=$(P "$proj"); ropt= mopt= newp=
   while [ $# -gt 0 ]; do case $1 in --runtime) ropt=$2; shift 2 ;; --model) mopt=$2; shift 2 ;; --new) newp=1; shift ;; *) die "unknown flag $1" ;; esac; done
