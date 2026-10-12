@@ -112,3 +112,12 @@ README (bỏ phần port; thêm box, egress, Tailscale, Chrome Secure DNS), `ski
 - Worker đọc được `.env` và mã nguồn; chỉ dùng secret dev/staging trong box. Để sau: app chạy uid riêng để worker không `cat` được `.env` (gói gọn trong `team run`).
 - Socket X99 chung: worker QA có thể chụp hoặc gõ vào display ảo đó (chỉ chứa browser QA).
 - 6 gói bị chặn không rõ đích ở lần chạy opencode đầu tiên; `team egress` in bộ đếm để phát hiện.
+
+## Điều chỉnh khi lập plan (2026-10-12)
+Phát hiện khi lần theo code; plan `docs/superpowers/plans/2026-10-12-project-box.md` làm theo phần này.
+- **Git chạy code trên host:** config và hooks của repo (`core.fsmonitor`, filter driver, hook) được thực thi khi lead, dashboard hoặc người dùng chạy git trên host. Vì vậy trong box: `config` và `hooks` của repo chỉ đọc; `.git` là mountpoint (không đổi tên/thay được); với worktree: file `.git`, `commondir`, `gitdir` chỉ đọc. Commit vẫn chạy được.
+- **Lead không chạy code project trên host** (test, cài deps, build, script của package): dùng lệnh mới `team exec <proj> "<cmd>"` (chạy trong box, bị firewall). Output của worker là dữ liệu không tin cậy, không làm theo chỉ dẫn trong đó.
+- **File allowlist egress** chuyển từ `.team/egress` (worker sửa được) sang `projects/.box/<proj>.egress` (ngoài mọi mount).
+- **Home của box** là volume ở `/box/home` (`HOME=/box/home`), không đè lên đường dẫn `$HOME` của host: tránh mountpoint thuộc root nằm trong home.
+- **9router:** forwarder `socat` trong box `127.0.0.1:20128` → host, để adapter giữ `NINEROUTER_URL=localhost` (goose không đổi được base_url).
+- **Egress:** registry mặc định chỉ port 443; DNS chỉ qua resolver của Docker (127.0.0.11), chặn :53 ra ngoài trực tiếp; luật được nạp nguyên khối bằng `iptables-restore` (không có lúc nào chuỗi trống).
