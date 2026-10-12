@@ -45,8 +45,9 @@ box_mounts() {   # <proj dir>: one docker --volume=... per line; host paths keep
   return 0
 }
 box_up() {   # <proj>: make sure the box runs; fail-closed (dies, never falls back to the host)
-  local p=$1 d n img x path mv
+  local p=$1 d n img x path mv lk
   d=$(readlink -f "$(P "$p")"); n=$(bx "$p")
+  mkdir -p "$PROJ/.box"; exec {lk}>"$PROJ/.box/$p.lock"; flock "$lk"   # one box_up per project: a racing one could rm -f a firewalled box
   box_ok || die "docker unavailable: workers need a box (TEAM_SANDBOX=none runs them unsandboxed)"
   git -C "$d" rev-parse --git-dir >/dev/null 2>&1 || die "box needs a git repo: $d"
   if ! box_running "$p"; then
@@ -68,6 +69,7 @@ box_up() {   # <proj>: make sure the box runs; fail-closed (dies, never falls ba
   fi
   box_fw "$p" || { $DOCKER rm -f "$n" "$n-ts" >/dev/null 2>&1; die "egress rules failed: box $n removed (fail-closed)"; }
   box_fwd "$p"
+  exec {lk}>&-
 }
 box_down() {   # <proj>: remove box, sidecar, network and home volume (best effort, quiet)
   local n; n=$(bx "$1"); rm -f "$(P "$1")"/.team/run/*.pid; box_ok || return 0   # app pid files die with the box

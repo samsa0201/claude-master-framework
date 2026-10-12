@@ -172,5 +172,12 @@ in_box b7 "echo '$O/.git' > '$TEAM_PROJECTS/b7/.git/commondir'"
 bt box_down b7; bt box_up b7 >/dev/null 2>&1
 check "planted commondir: no mount of the other repo" bash -c "! bt box_mounts '$TEAM_PROJECTS/b7' | grep -qF '$O'"
 bt box_down b7; rm -rf "$O"
+# --- concurrent box_up for one project: serialized, one box, rules loaded ---
+"$T" new b9 >/dev/null
+bt box_up b9 >/dev/null 2>&1 & q1=$!; bt box_up b9 >/dev/null 2>&1 & q2=$!
+wait $q1; r1=$?; wait $q2; r2=$?
+check "parallel box_up: both succeed" test "$r1/$r2" = 0/0
+check "parallel box_up: one box, REJECT loaded" bash -c "[ \$(docker ps -a --format '{{.Names}}' | grep -cx studiotest-b9) = 1 ] && fwq b9 STUDIO | grep -q REJECT"
+bt box_down b9
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
