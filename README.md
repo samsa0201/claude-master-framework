@@ -1,7 +1,7 @@
 # studio
 Claude session as entry point (product lead), coding-agent workers (opencode by default) running custom models in tmux panes, products in `projects/`.
 Setup: `./install.sh` (installs opencode/goose under `.runtime/`), put `NINEROUTER_API_KEY=...` in `.env` (gitignored, chmod 600) and load it in your shell (fish: `~/.config/fish/conf.d/studio.fish`, bash: `set -a; . ~/dev/studio/.env; set +a` in `~/.bashrc`), then `claude` in this dir.
-Commands: `team new|attach|assign|wait|ls|close|display|ui` (see bin/team). Tests: `tests/team_test.sh`, `tests/runtime-accept.sh <runtime> <model>`.
+Commands: `team new|attach|assign|wait|ls|close|run|stop|exec|egress|url|https|display|ui` (see bin/team). Tests: `tests/team_test.sh`, `tests/box_test.sh` (Docker), `tests/runtime-accept.sh <runtime> <model>`.
 
 ## Dashboard web (`team ui`)
 Chỉ đọc: worker và task trực tiếp, docs của project (markdown), diff chưa commit + lịch sử commit, terminal của worker; light/dark. Server `ui/serve.py` (stdlib) chỉ nghe `127.0.0.1` và chỉ nhận GET; giao diện Vite + Vue 3 + TypeScript chạy bằng Bun trong `ui/web/`, build ra `ui/dist/` (gitignored).
@@ -21,7 +21,7 @@ Worker dùng model tùy chỉnh (qwen3.8-flash, kCode qua 9router) chạy trong 
 | pi | ✅ T1–T3 (2 lượt) | ✅ chịu chậm tốt nhất | **không có** | chưa thử |
 | codex | ❌ T3 trượt 3/3 | ⚠️ T3 thiếu `.done` | sandbox + approval | chưa thử |
 
-**Chọn opencode làm mặc định** vì: đạt mọi task với cả hai model; có hệ thống quyền thật (MVP chưa có sandbox nên đây là lớp bảo vệ còn lại); đã chứng minh chạy tương tác trong tmux pane không bị hộp thoại chặn; hỗ trợ MCP (QA điều khiển browser). **goose làm dự phòng** (đạt hết, có chống lặp; chạy một task mỗi tiến trình, không giữ ngữ cảnh). **Không dùng pi** cho tới khi có sandbox (không có quyền). **Không dùng codex** qua 9router: model kết thúc lượt mà không gọi tool ("Applying now…") và `codex exec` coi là xong; bản 0.147 cũng bỏ `wire_api="chat"`.
+**Chọn opencode làm mặc định** vì: đạt mọi task với cả hai model; có hệ thống quyền thật (lớp bảo vệ trong box); đã chứng minh chạy tương tác trong tmux pane không bị hộp thoại chặn; hỗ trợ MCP (QA điều khiển browser). **goose làm dự phòng** (đạt hết, có chống lặp; chạy một task mỗi tiến trình, không giữ ngữ cảnh). **Không dùng pi** cho tới khi có sandbox (không có quyền). **Không dùng codex** qua 9router: model kết thúc lượt mà không gọi tool ("Applying now…") và `codex exec` coi là xong; bản 0.147 cũng bỏ `wire_api="chat"`.
 
 Lưu ý rút ra:
 - kCode chậm/chập chờn ở hạ tầng (502/503, có lúc chờ 100–200s), không phải lỗi agent: timeout cho task UI ≥ 10 phút.
@@ -37,10 +37,13 @@ Chromium của QA chạy với `--no-sandbox` (AppArmor trên máy này chặn s
 - noVNC/x11vnc không có mật khẩu và chỉ lắng nghe trên localhost: ổn trên máy một người dùng.
 - goose: `base_url` của provider cố định là localhost:20128 (NINEROUTER_URL không áp dụng cho goose).
 
-## Port theo project (cô lập mức 1)
-
-Mỗi project có một dải 20 port cố định (mặc định từ 20000, đổi bằng `TEAM_PORT_BASE`/`TEAM_PORT_SPAN`/`TEAM_PORT_MAX`), ghi ở `projects/.ports` (flock, không trùng khi `team new` song song) và `projects/<tên>/.team/ports.env`: `PORT_WEB`, `PORT_API`, `PORT_DB`, `PORT_CACHE`, `PORT_AUX1`, `PORT_AUX2`, `COMPOSE_PROJECT_NAME`. File này được đưa vào env của mọi pane worker và liệt kê trong task file kèm quy tắc "chỉ dùng các port này, strict mode".
-- `team ports <tên>`: bảng port + trạng thái, kèm dòng `ssh -L ...` để chạy trên Mac.
-- `team ports <tên> kill` / `team close <tên>`: dừng process còn nghe trên dải port của project, chỉ khi cwd của nó nằm trong thư mục project.
-- Đây là quy ước mềm (worker vẫn có thể bind port khác). Mức 2 (bubblewrap) và mức 3 (network namespace) sẽ ép thật; hợp đồng "port lấy từ env" giữ nguyên.
-- `bin/portscan.py` đọc `/proc` nên không cần `ss`/`lsof`.
+## Box theo project (cô lập)
+Worker và app chạy trong một container Docker riêng cho mỗi project (`studio-<tên>`), lead (Claude) ở trên host. Thiết kế + kết quả spike: [docs/superpowers/specs/2026-10-12-project-box-design.md](docs/superpowers/specs/2026-10-12-project-box-design.md).
+- **Mạng riêng:** port mặc định (5173, 3000...) không va chạm giữa các project; không còn dải port.
+- **Filesystem allowlist:** chỉ thấy project (rw), repo gốc của worktree (rw, nhưng `config` và `hooks` chỉ đọc vì chúng chạy code trên host), tool (ro: opencode, goose, node, bun, Chromium), display QA. Không thấy `~/.ssh`, `~/.claude`, project khác, docker socket. Home riêng ở `/box/home` (volume, xoá khi `team close`). Box của worktree chỉ thấy git dir của repo gốc dạng khung xương (objects/refs/logs rw; config, hooks, HEAD, info, packed-refs, config.worktree, commondir/gitdir ro) nên checkout chính của người dùng không bị chiếm quyền; dashboard chạy git với `GIT_DIR`/`GIT_COMMON_DIR` tin cậy, không đệ quy submodule, không hook.
+- **Egress:** chỉ uid của worker/app bị lọc; được ra 9router (qua forwarder `localhost:20128` trong box), registry npm/yarn/pypi và `projects/.box/<tên>.egress` (lead sửa, `team egress <tên>` nạp lại + in số gói bị chặn). Còn lại (host, tailnet, LAN, internet) bị chặn. Không có github mặc định.
+- **Lead chạy app:** `team run <tên> web "bun run dev"` (log `.team/logs/web.log`), `team stop <tên> web`, `team exec <tên> "bun test"` (cài deps, chạy test: không bao giờ chạy code project trên host). `team run` kiểm tra app còn sống sau ~0,3s, không thì báo "failed to start" (lệnh chạy một lần thì dùng `team exec`). Lead cũng xem diff/log bằng `team exec <tên> "git diff"` / `"git log"`, không chạy git trần trong `projects/<tên>` trên host.
+- **Truy cập từ Mac:** sidecar Tailscale mỗi project (key ephemeral ở `~/.config/studio/ts-authkey`, chmod 600): `http://<tên>:<port>`; `team https <tên> <port>` → `https://<tên>.<tailnet>.ts.net` (secure context cho PWA/OAuth). `team url <tên>` in các URL và dòng `ssh -L` dự phòng. Chrome phải tắt hoặc đổi Secure DNS thì mới phân giải được MagicDNS.
+- `team attach` copy các file `.env*` bị gitignore từ checkout chính. Chỉ dùng secret dev/staging: worker đọc được chúng, egress chặn đường gửi ra ngoài.
+- Fail-closed: không dựng được box hoặc firewall thì `team` dừng. `TEAM_SANDBOX=none` chạy trần (chỉ để debug/test framework).
+- Giới hạn: DNS chưa lọc; đích được phép cũng là kênh rò rỉ; IP của domain được chốt lúc nạp luật. Allowlist theo IP nên CDN của registry (Cloudflare/Fastly) dùng chung IP: worker quyết tâm có thể tới site khác cùng CDN (nâng cấp: proxy kiểm SNI). DNS qua resolver của Docker có thể tunnel lượng nhỏ dữ liệu. Display X dùng chung của QA hiển thị cho mọi box. Box worktree có thể di chuyển ref của repo gốc (vd. `refs/heads/main`). `.gitattributes` vẫn chọn được driver định nghĩa trong git config toàn cục của người dùng (vd. git-lfs). Đừng chạy git trần trong `projects/<project box>` trên host.
