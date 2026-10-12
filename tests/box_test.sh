@@ -28,5 +28,35 @@ CH=$(ls -d "${TEAM_PW_CACHE:-$HOME/.cache/ms-playwright}"/chromium-*/chrome-linu
 [ -n "$CH" ] && check "chromium libs all resolve in the image" docker run --rm -v "$CH:$CH:ro" "$I" bash -c "! ldd '$CH/chrome' | grep -q 'not found'"
 check "same Dockerfile -> same tag, no rebuild" test "$(img)" = "$I"
 
+# --- lifecycle, filesystem allowlist, git protection ---
+in_box() { docker exec -u "$U" "studiotest-$1" bash -c "$2"; }
+bt() { ( ROOT=$R; PROJ=$TEAM_PROJECTS; P() { echo "$PROJ/$1"; }; die() { echo "$*" >&2; exit 1; }; source "$R/bin/box.sh"; "$@" ); }
+export -f in_box bt
+"$T" new b1 >/dev/null
+check "box_up starts the box" bt box_up b1
+check "box runs as the host uid with home /box/home" bash -c "[ \"\$(docker exec studiotest-b1 bash -c 'id -u; echo \$HOME' | paste -sd' ')\" = '$U /box/home' ]"
+check "project dir is writable, files owned by the host user" bash -c "docker exec studiotest-b1 touch '$TEAM_PROJECTS/b1/w' && [ \$(stat -c %u '$TEAM_PROJECTS/b1/w') = $U ]"
+check "host home is hidden (no ~/.ssh, no studio repo, no .env)" in_box b1 "[ ! -e '$HOME/.ssh' ] && [ ! -e '$R/bin/team' ] && [ ! -e '$R/.env' ]"
+check "runtime-home is mounted read-only" in_box b1 "[ -d '$R/runtime-home' ] && ! touch '$R/runtime-home/x' 2>/dev/null"
+check "no docker socket" in_box b1 "[ ! -e /var/run/docker.sock ]"
+check "root in the box has no capabilities" not docker exec -u 0 studiotest-b1 chown 0 "$TEAM_PROJECTS/b1/w"
+check "git commit works in the box" in_box b1 "cd '$TEAM_PROJECTS/b1' && git add w && git -c user.name=t -c user.email=t@t commit -qm t"
+check "repo config is read-only" not in_box b1 "echo '[core]' >> '$TEAM_PROJECTS/b1/.git/config'"
+check "repo hooks are read-only" not in_box b1 "echo x > '$TEAM_PROJECTS/b1/.git/hooks/pre-commit'"
+check ".git cannot be swapped for another repo" not in_box b1 "mv '$TEAM_PROJECTS/b1/.git' '$TEAM_PROJECTS/b1/g2'"
+check "box_up again keeps the running box" bash -c "c=\$(docker inspect -f '{{.Id}}' studiotest-b1); bt box_up b1 && [ \"\$(docker inspect -f '{{.Id}}' studiotest-b1)\" = \"\$c\" ]"
+# attached worktree: commits land in the main repo, whose config/hooks stay read-only
+git -C "$M" init -q; git -C "$M" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$M" worktree add -q -b feat/a1 "$TEAM_PROJECTS/a1"
+check "worktree box starts" bt box_up a1
+check "worktree commit writes the main repo" bash -c "in_box a1 \"cd '$TEAM_PROJECTS/a1' && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m w\" && git -C '$M' log --format=%s feat/a1 | grep -qx w"
+check "main repo config is read-only" not in_box a1 "echo x >> '$M/.git/config'"
+check "main repo hooks are read-only" not in_box a1 "touch '$M/.git/hooks/post-checkout'"
+check "worktree .git pointer is read-only" not in_box a1 "echo 'gitdir: /tmp/x' > '$TEAM_PROJECTS/a1/.git'"
+check "worktree commondir is read-only" not in_box a1 "echo /tmp > '$M/.git/worktrees/a1/commondir'"
+check "not a git repo -> refused" bash -c "mkdir -p '$TEAM_PROJECTS/ng'; ! bt box_up ng"
+bt box_down a1
+check "box_down removes container, network, volume" bash -c "! docker ps -a --format '{{.Names}}' | grep -qx studiotest-a1 && ! docker network ls --format '{{.Name}}' | grep -qx studiotest-a1 && ! docker volume ls -q | grep -qx studiotest-a1-home"
+
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
