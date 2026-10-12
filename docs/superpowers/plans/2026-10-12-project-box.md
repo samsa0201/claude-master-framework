@@ -31,6 +31,7 @@
 | `bin/team` | CLI: drops port blocks, wires assign/close to the box, new commands `run stop exec egress url https`, `.env` copy on attach |
 | `bin/portscan.py` | deleted |
 | `tests/box_test.sh` | real Docker tests (new) |
+| `ui/serve.py`, `tests/ui_api_test.py` | dashboard git hardened against box-planted repo state (Task 7b) |
 | `tests/team_test.sh`, `tests/fake-worker.sh` | plumbing tests updated (no ports; box-mode checks without docker) |
 | `agents/qa.md` | QA uses the app the lead started |
 | `README.md`, `skills/studio/SKILL.md`, `docs/isolation-tech.md` | docs |
@@ -811,6 +812,112 @@ Expected: `team url` shows `tailnet: http://tsdemo:<port>` and `https: https://t
 ```bash
 git add bin/box.sh bin/team tests/box_test.sh
 git commit -m "feat(box): tailscale sidecar per project, team url and team https"
+```
+
+---
+
+### Task 7b: Dashboard git hardened against box-planted repo state
+
+Added during execution (ledger ruling, Task 2 review). A box can write its project's git dir (non-worktree `team new` repos must keep `.git` writable for HEAD/index) and its work tree. Host-side git then follows box-planted state: `.git/commondir` redirects config to an attacker repo (filter drivers run on `git diff`), and submodules carry their own config. `ui/serve.py` runs git on the host for every project, so it must not trust any of that.
+
+**Files:**
+- Modify: `ui/serve.py` (`git()` + a `git_dirs()` helper)
+- Modify: `tests/ui_api_test.py`
+
+**Interfaces:**
+- Produces: `serve.git_dirs(pd) -> (git_dir, common_dir)`: for a plain repo, both are `<pd>/.git` (ignoring any `commondir` file). For a worktree (`.git` is a file), they are the pointer's gitdir and that gitdir's `commondir`, resolved; both of those are read-only mounts in the box.
+
+- [ ] **Step 1: Write the failing tests** (add to `UiApiTest`):
+
+```python
+    def _evil(self, name):   # repo whose host-side git would run box-planted commands; returns the marker path
+        d = os.path.join(serve.PROJ, name)
+        os.makedirs(d); sh(d, "init", "-q"); write(f"{d}/a.txt", "1\n"); sh(d, "add", "."); sh(d, "commit", "-q", "-m", "c")
+        write(f"{d}/a.txt", "2\n")   # modified: diff must clean-filter it
+        marker = os.path.join(self.tmp, f"{name}-PWNED")
+        return d, marker
+
+    def test_git_ignores_planted_commondir(self):
+        d, marker = self._evil("evilcommon")
+        evil = os.path.join(self.tmp, "evilcommon.git")
+        shutil.copytree(f"{d}/.git", evil)   # a working copy of the repo, plus a filter driver
+        subprocess.run(["git", "config", "-f", f"{evil}/config", "filter.x.clean", f"sh -c 'touch {marker}; cat'"], check=True)
+        write(f"{d}/.gitattributes", "*.txt filter=x\n")
+        write(f"{d}/.git/commondir", evil + "\n")
+        self.assertEqual(subprocess.run(["git", "-C", d, "config", "filter.x.clean"], capture_output=True).returncode, 0)  # plain git is hijacked
+        for path in ("/api/projects/evilcommon/diff", "/api/projects/evilcommon/log"):
+            self.assertEqual(self.get(path)[0], 200, path)
+        self.assertFalse(os.path.exists(marker), "dashboard git ran a planted filter")
+
+    def test_git_ignores_submodule_config(self):
+        d, marker = self._evil("evilsub")
+        sub = f"{d}/sub"; os.makedirs(sub); sh(sub, "init", "-q"); write(f"{sub}/b.txt", "1\n"); sh(sub, "add", "."); sh(sub, "commit", "-q", "-m", "s")
+        subprocess.run(["git", "-C", sub, "config", "filter.x.clean", f"sh -c 'touch {marker}; cat'"], check=True)
+        write(f"{sub}/.gitattributes", "*.txt filter=x\n"); write(f"{sub}/b.txt", "2\n")
+        sha = subprocess.run(["git", "-C", sub, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+        sh(d, "update-index", "--add", "--cacheinfo", f"160000,{sha},sub")
+        write(f"{d}/.gitmodules", '[submodule "sub"]\n\tpath = sub\n\turl = ./sub\n'); sh(d, "add", ".gitmodules"); sh(d, "commit", "-q", "-m", "sub")
+        self.assertEqual(self.get("/api/projects/evilsub/diff")[0], 200)
+        self.assertFalse(os.path.exists(marker), "dashboard git recursed into a planted submodule")
+
+    def test_git_dirs_worktree_and_plain(self):
+        d, _ = self._evil("wtmain")
+        wt = os.path.join(serve.PROJ, "wt1"); sh(d, "worktree", "add", "-q", "-b", "feat/wt1", wt)
+        gd, cd = serve.git_dirs(wt)
+        self.assertEqual((os.path.realpath(gd), os.path.realpath(cd)), (os.path.realpath(f"{d}/.git/worktrees/wt1"), os.path.realpath(f"{d}/.git")))
+        write(f"{d}/.git/commondir", "/somewhere/else\n")
+        self.assertEqual(serve.git_dirs(d), (f"{d}/.git", f"{d}/.git"))
+        self.assertEqual(self.get("/api/projects/wt1/log")[0], 200)
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `python3 -m unittest tests/ui_api_test.py -k git_ -v`
+Expected: `test_git_ignores_planted_commondir` FAILs (marker created or 500). `test_git_ignores_submodule_config` FAILs (marker created). `test_git_dirs_worktree_and_plain` errors (`git_dirs` missing). If the submodule test passes before any change (git did not recurse here), keep it as a regression guard and say so in the report.
+
+- [ ] **Step 3: Implement** in `ui/serve.py`, replacing `def git(...)` with:
+
+```python
+def git_dirs(pd):  # → (git dir, common dir) from files a box cannot change: a box may plant .git/commondir to redirect config
+    dot = os.path.join(pd, ".git")
+    if not os.path.isfile(dot):
+        return dot, dot   # plain repo: never follow a commondir file
+    with open(dot) as f:   # worktree: the pointer and its commondir are read-only mounts in the box
+        gd = f.read().strip().removeprefix("gitdir:").strip()
+    gd = os.path.normpath(os.path.join(pd, gd))
+    with open(os.path.join(gd, "commondir")) as f:
+        cd = os.path.normpath(os.path.join(gd, f.read().strip()))
+    return gd, cd
+
+
+def git(pd, *args, ok=(0,)):  # → (text, truncated). Hardened: trusted git dirs, no fsmonitor, hooks, submodule recursion, pager, prompts or index locks.
+    gd, cd = git_dirs(pd)
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_DIR=gd, GIT_COMMON_DIR=cd, GIT_WORK_TREE=pd)
+    try:
+        r = subprocess.run(["git", "-C", pd, "-c", "core.fsmonitor=false", "-c", "core.quotepath=off", "-c", "core.hooksPath=/dev/null",
+                            "-c", "diff.ignoreSubmodules=all", "-c", "submodule.recurse=false", "--no-pager", *args],
+                           capture_output=True, timeout=GIT_TIMEOUT, env=env)
+    except subprocess.TimeoutExpired:
+        raise ApiError(504, "git timed out")
+    except OSError:
+        raise ApiError(500, "git not available")
+    if r.returncode not in ok:
+        raise ApiError(500, "git failed: " + r.stderr.decode("utf-8", "replace").strip()[:200])
+    return r.stdout[:MAX_GIT].decode("utf-8", "replace"), len(r.stdout) > MAX_GIT
+```
+
+If the submodule test still fails, add `"--ignore-submodules=all"` to the `diff` calls in `diff()` (both the tracked diff and nothing else). Keep the change minimal and rerun.
+
+- [ ] **Step 4: Run all UI tests**
+
+Run: `python3 -m unittest tests/ui_api_test.py`
+Expected: `OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add ui/serve.py tests/ui_api_test.py
+git commit -m "fix(ui): dashboard git ignores box-planted commondir and submodule config"
 ```
 
 ---
