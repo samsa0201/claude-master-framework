@@ -97,3 +97,9 @@ box_cmd() {   # <proj> <dir> <cmd> <env names...>: docker exec line (bash syntax
   for k in "$@"; do s+=" -e $k"; done
   echo "$s $(printf %q "$(bx "$p")") bash -c $(printf %q "$c")"
 }
+box_ps() {   # <proj> <dir>: "<name> running|stopped" per app started with team run
+  local f n; for f in "$2"/.team/run/*.pid; do
+    [ -e "$f" ] || continue; n=$(basename "$f" .pid)
+    if box_running "$1" && $DOCKER exec "$(bx "$1")" kill -0 "$(cat "$f")" 2>/dev/null; then echo "$n running"; else echo "$n stopped"; fi
+  done
+}

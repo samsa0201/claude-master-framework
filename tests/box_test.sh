@@ -114,5 +114,23 @@ check "fake worker ran inside the box" bash -c "[ \"\$('$T' wait $id 60)\" = don
 check "worker output owned by the host user" test "$(stat -c %u "$TEAM_PROJECTS/b1/.team/out/$id.md")" = "$U"
 "$T" close b1
 check "team close <proj> removes the box" bash -c "! docker ps -a --format '{{.Names}}' | grep -qx studiotest-b1"
+# --- lead commands: run / stop / exec / egress; two boxes on the same port ---
+"$T" new b2 >/dev/null; "$T" new b4 >/dev/null
+"$T" run b2 web "python3 -m http.server 5173" >/dev/null
+"$T" run b4 web "python3 -m http.server 5173" >/dev/null; sleep 1.5
+boxip() { docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "studiotest-$1"; }
+check "two boxes serve :5173 at once" bash -c "curl -sf -m 3 http://$(boxip b2):5173/ >/dev/null && curl -sf -m 3 http://$(boxip b4):5173/ >/dev/null"
+check "box b2 cannot reach box b4" not can b2 "$(boxip b4)" 5173
+check "run lists the app" bash -c "'$T' run b2 | grep -qx 'web running'"
+check "app log in .team/logs" test -f "$TEAM_PROJECTS/b2/.team/logs/web.log"
+check "same name twice refused" not "$T" run b2 web true
+"$T" stop b2 web >/dev/null; sleep 0.5
+check "stop kills the app" bash -c "! curl -sf -m 2 http://$(boxip b2):5173/ >/dev/null && '$T' run b2 | grep -qx 'web stopped'"
+check "exec runs as the box user" bash -c "[ \"\$('$T' exec b2 'id -u; echo \$HOME' | paste -sd' ')\" = '$U /box/home' ]"
+check "exec passes the exit code" bash -c "'$T' exec b2 'exit 3'; [ \$? = 3 ]"
+check "exec is firewalled" not "$T" exec b2 "timeout 4 bash -c '</dev/tcp/example.com/443'"
+o=$("$T" egress b2)
+check "egress prints counter and allowlist path" bash -c '[[ "$1" == *"rejected packets: "* && "$1" == *".box/b2.egress"* ]]' _ "$o"
+"$T" close b2; "$T" close b4
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

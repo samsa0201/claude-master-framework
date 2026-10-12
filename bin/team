@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] | wait <id> [secs] | ls | close <proj> [role] | display start|stop | ui [port]
+# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] | wait <id> [secs] | ls | close <proj> [role] | run <proj> [<name> "<cmd>"] | stop <proj> <name> | exec <proj> "<cmd>" | egress <proj> | display start|stop | ui [port]
 # Workers = a coding-agent CLI (adapter agents/runtime/<R>.sh, default opencode) in tmux PANES of the window you run claude in (tagged @team=<proj>-<role>).
 set -euo pipefail
 ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
@@ -53,6 +53,7 @@ assign)
   while [ $# -gt 0 ]; do case $1 in --runtime) ropt=$2; shift 2 ;; --model) mopt=$2; shift 2 ;; --new) newp=1; shift ;; *) die "unknown flag $1" ;; esac; done
   [[ $role =~ ^[a-z][a-z0-9-]*$ ]] || die "role must be lowercase-with-dashes (e.g. dev-fe)"
   [ -d "$d" ] || die "no project: $d"
+  d=$(readlink -f "$d")   # one resolved path everywhere: adapter paths must match the box mounts
   id="$proj-$role-$(date +%H%M%S)"
   n=2; while [ -e "$d/.team/tasks/$id.md" ]; do id="${id%-[0-9]}-$n"; n=$((n+1)); done   # same-second assigns must not overwrite each other's task
   a=$(base_of "$role"); flex="$d/.team/roles/$role.md"
@@ -80,8 +81,8 @@ assign)
       tmux kill-pane -t "$pane"; pane=
     fi
   fi
-  [ -z "$pane" ] || { pr=$(tmux show-option -pqv -t "$pane" @runtime); pm=$(tmux show-option -pqv -t "$pane" @model)
-    [ "$pr/$pm" = "$runtime/$model" ] || die "worker $tag runs $pr/$pm; use --new or 'team close $proj $role' to switch"; }
+  [ -z "$pane" ] || { pr=$(tmux show-option -pqv -t "$pane" @runtime); pm=$(tmux show-option -pqv -t "$pane" @model); ps=$(tmux show-option -pqv -t "$pane" @sandbox)
+    [ "$pr/$pm/$ps" = "$runtime/$model/$SANDBOX" ] || die "worker $tag runs $pr/$pm (sandbox: ${ps:-?}); use --new or 'team close $proj $role' to switch"; }   # a host pane must never serve box mode (or vice versa)
   cat > "$d/.team/tasks/$id.md" <<T
 # Task $id (role: $role) (worker: ${tag#$proj-})
 You are acting as: $role.
@@ -104,12 +105,12 @@ T
     kvs=$(rt_env) || exit 1   # not via process substitution: adapter failures must abort
     [ "$SANDBOX" = none ] || kvs=$(box_env <<<"$kvs")
     envs=(); names=(); while IFS= read -r kv; do [ -n "$kv" ] && { envs+=(-e "$kv"); names+=("${kv%%=*}"); }; done <<<"$kvs"
-    c=$(rt_cmd); [ "$SANDBOX" = none ] || c=$(box_cmd "$proj" "$(readlink -f "$d")" "$c" "${names[@]}")   # worker runs in the box; env values stay in the pane env
+    c=$(rt_cmd); [ "$SANDBOX" = none ] || c=$(box_cmd "$proj" "$d" "$c" "${names[@]}")   # worker runs in the box; env values stay in the pane env
     # bash -c: the pane command is bash syntax; never run it through the user's tmux default-shell (e.g. fish)
     pane=$(tmux split-window -d -P -F '#{pane_id}' -t "${TMUX_PANE:?run inside tmux}" -c "$d" "${envs[@]}" bash -c \
       "$c; tmux set-option -p -t \"\$TMUX_PANE\" @dead 1; read -p 'worker exited, enter to close'")
     tmux set-option -p -t "$pane" @team "$tag"; header "$pane" "$id" "⏳" "$title"; echo "$pane" > "$d/.team/out/$id.pane"
-    tmux set-option -p -t "$pane" @timeout "$timeout"; tmux set-option -p -t "$pane" @runtime "$runtime"; tmux set-option -p -t "$pane" @model "$model"
+    tmux set-option -p -t "$pane" @timeout "$timeout"; tmux set-option -p -t "$pane" @runtime "$runtime"; tmux set-option -p -t "$pane" @model "$model"; tmux set-option -p -t "$pane" @sandbox "$SANDBOX"
     [ "$browser" != none ] && tmux set-option -p -t "$pane" @browser 1
     tmux set-option -w -t "$pane" pane-border-status top
     tmux set-option -w -t "$pane" pane-border-format \
@@ -135,6 +136,28 @@ wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone wi
     sleep 1
   done; echo timeout; exit 1 ;;
 display) case ${1:-} in start) display_start ;; stop) display_stop ;; *) die "team display start|stop" ;; esac ;;
+run)   p=${1:?team run <proj> [<name> \"<cmd>\"]}; d=$(readlink -f "$(P "$p")"); [ -d "$d" ] || die "no project: $d"
+       [ "$SANDBOX" = box ] || die "team run needs the box (TEAM_SANDBOX=none)"
+       if [ $# -lt 3 ]; then box_ps "$p" "$d"; exit 0; fi
+       [[ $2 =~ ^[a-z][a-z0-9-]*$ ]] || die "name must be lowercase-with-dashes (e.g. web, api)"
+       box_up "$p"; mkdir -p "$d/.team/logs" "$d/.team/run"
+       box_ps "$p" "$d" | grep -qx "$2 running" && die "$2 already running (team stop $p $2 first)"
+       # setsid: own process group, so stop takes the dev server's children too; apps are firewalled like workers
+       $DOCKER exec -d -u "$BOX_UID:$BOX_GID" -w "$d" "$(bx "$p")" setsid bash -c 'echo $$ > "$1"; exec bash -c "$2" > "$3" 2>&1' \
+         _ "$d/.team/run/$2.pid" "$3" "$d/.team/logs/$2.log"
+       sleep 0.3; echo "started $2 (log: .team/logs/$2.log)" ;;
+stop)  p=${1:?team stop <proj> <name>}; n=${2:?team stop <proj> <name>}; f="$(readlink -f "$(P "$p")")/.team/run/$n.pid"
+       [ -f "$f" ] || die "not started: $n"
+       if box_running "$p"; then $DOCKER exec "$(bx "$p")" kill -TERM -- "-$(cat "$f")" 2>/dev/null || true; fi
+       echo "stopped $n" ;;   # pid file stays so team run lists it as stopped; a rerun overwrites it
+exec)  p=${1:?team exec <proj> \"<cmd>\"}; d=$(readlink -f "$(P "$p")"); [ -d "$d" ] || die "no project: $d"
+       [ "$SANDBOX" = box ] || die "team exec needs the box (TEAM_SANDBOX=none)"
+       box_up "$p"; exec $DOCKER exec -u "$BOX_UID:$BOX_GID" -w "$d" "$(bx "$p")" bash -c "${2:?team exec <proj> \"<cmd>\"}" ;;
+egress) p=${1:?team egress <proj>}; [ "$SANDBOX" = box ] || die "team egress needs the box (TEAM_SANDBOX=none)"
+       box_running "$p" || die "box not running: $p (team assign/run/exec starts it)"
+       echo "rejected packets: $(box_fw "$p" --count)"   # before the reload, which resets the counter
+       box_fw "$p" || die "egress rules failed"
+       echo "allow list: $PROJ/.box/$p.egress (host[:port] per line, default port 443)" ;;
 ui)    "$ROOT/ui/build.sh" || { [ -f "$ROOT/ui/dist/index.html" ] && echo "dashboard rebuild failed: serving the previous build" >&2 || die "dashboard not built (see above)"; }
        exec python3 "$ROOT/ui/serve.py" "${1:-7777}" ;;   # read-only dashboard: workers, tasks, docs, diffs, terminals
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;

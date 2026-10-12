@@ -195,7 +195,7 @@ id=$("$T" assign bx1 pm "env" --runtime fake); waits "$id" >/dev/null
 check "task file: private network + default ports, no port block" bash -c "grep -q 'default ports' '$TEAM_PROJECTS/bx1/.team/tasks/$id.md' && ! grep -q PORT_ '$TEAM_PROJECTS/bx1/.team/tasks/$id.md'"
 check "no ports.env, no registry" bash -c "[ ! -e '$TEAM_PROJECTS/bx1/.team/ports.env' ] && [ ! -e '$TEAM_PROJECTS/.ports' ]"
 check "fail-closed: no docker -> assign refused, no pane, no task" bash -c "n=\$(ls '$TEAM_PROJECTS/bx1/.team/tasks' | wc -l); o=\$(TEAM_SANDBOX=box TEAM_DOCKER=false '$T' assign bx1 dev x --runtime fake 2>&1); [ \$? -ne 0 ] && grep -q 'docker unavailable' <<<\"\$o\" && ! '$T' ls | grep -q ' bx1-dev\$' && [ \$(ls '$TEAM_PROJECTS/bx1/.team/tasks' | wc -l) = \$n ]"
-check "unknown TEAM_SANDBOX rejected" bash -c "! TEAM_SANDBOX=bwrap '$T' ls"
+check "unknown TEAM_SANDBOX rejected" bash -c "o=\$(TEAM_SANDBOX=bwrap '$T' ls 2>&1); [ \$? -ne 0 ] && grep -q 'must be box or none' <<<\"\$o\""
 check "box_env moves data/state dirs into the box home" bash -c "
   ROOT='$R' PROJ=/tmp; P() { :; }; die() { exit 1; }; source '$R/bin/box.sh'
   o=\$(printf 'XDG_DATA_HOME=/x\nXDG_STATE_HOME=/y\nA=1\n' | box_env)
@@ -204,5 +204,10 @@ check "box_cmd: env by name only, quoted command, box user" bash -c "
   ROOT='$R' PROJ=/tmp; P() { :; }; die() { exit 1; }; TEAM_BOX_PREFIX=sx; source '$R/bin/box.sh'
   c=\$(box_cmd p1 '/a b' \"echo 'hi there'\" K1 K2)
   [[ \$c == *'exec -it -u '\$(id -u):\$(id -g)* && \$c == *' -e K1 -e K2 '* && \$c == *'sx-p1'* && \$c != *'K1='* ]] && eval \"set -- \${c#* bash -c }\" && [ \"\$1\" = \"echo 'hi there'\" ]"
+check "run/exec/egress refuse without the box" bash -c "! '$T' run bx1 web true 2>/dev/null && ! '$T' exec bx1 true 2>/dev/null && ! '$T' egress bx1 2>/dev/null"
+"$T" new sb1 >/dev/null
+waits "$("$T" assign sb1 dev "FAKE_HANG" --runtime fake)" 1 >/dev/null
+sp=$("$T" ls | awk '$2=="sb1-dev"{print $1}'); tmux set-option -p -t "$sp" @sandbox box   # as if it had been spawned in box mode
+check "pane reuse across sandbox modes refused, no task file" bash -c "n=\$(ls '$TEAM_PROJECTS/sb1/.team/tasks' | wc -l); o=\$('$T' assign sb1 dev x --runtime fake 2>&1); [ \$? -ne 0 ] && grep -q 'use --new or' <<<\"\$o\" && [ \$(ls '$TEAM_PROJECTS/sb1/.team/tasks' | wc -l) = \$n ]"
 # @@MORE_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
