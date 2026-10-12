@@ -1,6 +1,6 @@
 # Cô lập project: vấn đề, công nghệ ứng viên, kế hoạch POC
 
-Trạng thái: **brainstorm + research, chưa chọn công nghệ, chưa có POC nào chạy**. Tài liệu này ghi lại để chạy thử trên máy Linux thật (người dùng ssh từ Mac qua Tailscale, chạy tmux trên Linux) rồi mới chốt.
+Trạng thái: **đã chọn Docker box mỗi project + firewall iptables trong netns + Tailscale sidecar** (2026-10-12), sau spike trên máy thật. Thiết kế và kết quả spike: [specs/2026-10-12-project-box-design.md](superpowers/specs/2026-10-12-project-box-design.md). Phần dưới giữ làm bối cảnh research; các lệnh POC ở mục 5 là bản nháp ban đầu.
 
 Quy trình đã thống nhất cho từng phần: **plan → POC → chọn → triển khai**; chỉ triển khai sau khi người dùng duyệt.
 
