@@ -166,5 +166,11 @@ echo 1 > "$H/one"; mkdir -p "$D6/.team/run"; in_box b6 "ln -s '$H/one' '$D6/.tea
 check "run/*.pid symlink to a host file: listed stopped" bash -c "'$T' run b6 | grep -qx 'leak stopped'"
 check "stop refuses a run/*.pid symlink" bash -c "! '$T' stop b6 leak 2>/dev/null && docker exec studiotest-b6 true"
 "$T" close b6
+# --- a plain repo's box-planted .git/commondir does not steer the mounts to another host repo ---
+"$T" new b7 >/dev/null; O=$(mktemp -d); git -C "$O" init -q; bt box_up b7
+in_box b7 "echo '$O/.git' > '$TEAM_PROJECTS/b7/.git/commondir'"
+bt box_down b7; bt box_up b7 >/dev/null 2>&1
+check "planted commondir: no mount of the other repo" bash -c "! bt box_mounts '$TEAM_PROJECTS/b7' | grep -qF '$O'"
+bt box_down b7; rm -rf "$O"
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

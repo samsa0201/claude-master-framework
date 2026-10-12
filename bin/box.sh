@@ -19,7 +19,8 @@ node_prefix() {   # prints node's install prefix, or nothing for system prefixes
 }
 box_mounts() {   # <proj dir>: one docker --volume=... per line; host paths keep their path inside the box
   local d=$1 g gd x
-  g=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir); gd=$(git -C "$d" rev-parse --path-format=absolute --git-dir)
+  g=$d/.git gd=$d/.git   # plain repo: never ask git, it follows a box-planted .git/commondir to any host repo
+  [ -f "$d/.git" ] && { g=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir); gd=$(git -C "$d" rev-parse --path-format=absolute --git-dir); }
   echo "--volume=$d:$d"
   mkdir -p "$d/.team/out" "$d/.team/logs" "$d/.team/run"   # .team is read by the HOST (roles, tasks, role prompts): ro, worker output dirs rw
   echo "--volume=$d/.team:$d/.team:ro"; for x in out logs run; do echo "--volume=$d/.team/$x:$d/.team/$x"; done
