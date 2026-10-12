@@ -64,5 +64,39 @@ check "not a git repo -> refused" bash -c "mkdir -p '$TEAM_PROJECTS/ng'; ! bt bo
 bt box_down a1
 check "box_down removes container, network, volume" bash -c "! docker ps -a --format '{{.Names}}' | grep -qx studiotest-a1 && ! docker network ls --format '{{.Name}}' | grep -qx studiotest-a1 && ! docker volume ls -q | grep -qx studiotest-a1-home"
 
+# --- egress firewall (uid-filtered, loaded by a root helper) ---
+can() { in_box "$1" "timeout 4 bash -c '</dev/tcp/$2/$3'"; }
+root_can() { docker run --rm --network "container:studiotest-$1" "$I" bash -c "timeout 4 bash -c '</dev/tcp/$2/$3'"; }   # root: not filtered
+fwq() { docker run --rm --network "container:studiotest-$1" --cap-add NET_ADMIN "$I" iptables -S "$2"; }
+export -f can root_can fwq
+(cd "$H" && exec python3 -m http.server 28128 --bind 0.0.0.0 >/dev/null 2>&1) & s1=$!
+(cd "$H" && exec python3 -m http.server 28129 --bind 0.0.0.0 >/dev/null 2>&1) & s2=$!
+sleep 1; bt box_up b1
+GW=$(docker network inspect -f '{{(index .IPAM.Config 0).Gateway}}' studiotest-b1)
+check "9router port on the host: allowed" can b1 "$GW" 28128
+check "9router forwarder: localhost:28128 inside the box" can b1 127.0.0.1 28128
+check "other host port: blocked" not can b1 "$GW" 28129
+check "...but open without the firewall (so the block is ours)" root_can b1 "$GW" 28129
+LAN=$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<NF;i++) if($i=="src") print $(i+1)}')
+check "host LAN address: blocked" not can b1 "$LAN" 28129
+TSIP=$(tailscale ip -4 2>/dev/null | head -1 || true)
+[ -n "$TSIP" ] && check "tailnet address: blocked" not can b1 "$TSIP" 28129
+check "npm registry: allowed" can b1 registry.npmjs.org 443
+check "example.com: blocked" not can b1 example.com 443
+check "DNS resolves through Docker's resolver" in_box b1 "getent hosts example.com"
+check "direct DNS to an outside resolver: blocked" not can b1 1.1.1.1 53
+check "worker cannot flush the rules" not in_box b1 "iptables -F STUDIO"
+check "root in the box cannot flush the rules" not docker exec -u 0 studiotest-b1 iptables -F STUDIO
+bt box_up b1; bt box_up b1
+check "reload is idempotent: one jump, one REJECT" bash -c "[ \$(fwq b1 OUTPUT | grep -c -- '-j STUDIO') = 1 ] && [ \$(fwq b1 STUDIO | grep -c REJECT) = 1 ]"
+mkdir -p "$TEAM_PROJECTS/.box"; printf '# test\nexample.com\n' > "$TEAM_PROJECTS/.box/b1.egress"
+bt box_up b1
+check "allowlist file opens example.com" can b1 example.com 443
+check "count reports rejected packets" bash -c "can b1 '$GW' 28129; [ \"\$(bt box_fw b1 --count)\" -ge 1 ]"
+mkdir -p "$TEAM_PROJECTS/b3"; git -C "$TEAM_PROJECTS/b3" init -q
+o=$(NINEROUTER_URL=http://localhost:notaport/v1 bt box_up b3 2>&1); rc=$?
+export o rc   # $o holds iptables' quotes: pass by env, not through the bash -c string
+check "rules fail -> box removed, error says fail-closed" bash -c "[ \$rc -ne 0 ] && [[ \$o == *fail-closed* ]] && ! docker ps -a --format '{{.Names}}' | grep -qx studiotest-b3"
+
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

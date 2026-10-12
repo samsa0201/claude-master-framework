@@ -60,11 +60,32 @@ box_up() {   # <proj>: make sure the box runs; fail-closed (dies, never falls ba
       git config --global "$x" >/dev/null && $DOCKER exec "$n" git config --global "$x" "$(git config --global "$x")"
     done
   fi
-  return 0
+  box_fw "$p" || { $DOCKER rm -f "$n" "$n-ts" >/dev/null 2>&1; die "egress rules failed: box $n removed (fail-closed)"; }
+  box_fwd "$p"
 }
 box_down() {   # <proj>: remove box, sidecar, network and home volume (best effort, quiet)
   local n; n=$(bx "$1"); box_ok || return 0
   $DOCKER rm -f "$n" "$n-ts" >/dev/null 2>&1 || true
   $DOCKER network rm "$n" >/dev/null 2>&1 || true
   $DOCKER volume rm "$n-home" >/dev/null 2>&1 || true
+}
+EGRESS_DEFAULT=(registry.npmjs.org registry.yarnpkg.com pypi.org files.pythonhosted.org)
+nr_port() { local u=${NINEROUTER_URL:-http://localhost:20128/v1}; u=${u#*://}; u=${u%%/*}; [[ $u == *:* ]] && echo "${u##*:}" || echo 80; }
+box_gw() { $DOCKER network inspect -f '{{(index .IPAM.Config 0).Gateway}}' "$(bx "$1")"; }
+box_egress() { local f="$PROJ/.box/$1.egress"; [ -f "$f" ] && awk '!/^[[:space:]]*(#|$)/{print $1}' "$f"; return 0; }   # outside every mount: workers can't edit it
+box_fw() {   # <proj> [--count]: (re)load egress rules from a short-lived root helper with NET_ADMIN; the box itself has no caps
+  local p=$1; shift; local img; img=$(box_image) || return 1
+  if [ "${1:-}" = --count ]; then
+    $DOCKER run --rm -i --user 0 --network "container:$(bx "$p")" --cap-add NET_ADMIN "$img" bash -s -- --count < "$ROOT/box/fw.sh"
+  else
+    # shellcheck disable=SC2046  # one host per word
+    $DOCKER run --rm -i --user 0 --network "container:$(bx "$p")" --cap-add NET_ADMIN "$img" \
+      bash -s -- "$BOX_UID" "$(box_gw "$p")" "$(nr_port)" "${EGRESS_DEFAULT[@]}" $(box_egress "$p") < "$ROOT/box/fw.sh"
+  fi
+}
+box_fwd() {   # <proj>: 127.0.0.1:<9router port> in the box -> 9router on the host; adapters keep NINEROUTER_URL=localhost (goose can't change it)
+  local n port; n=$(bx "$1"); port=$(nr_port)
+  $DOCKER exec "$n" bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null && return 0
+  $DOCKER exec -d "$n" socat "TCP-LISTEN:$port,bind=127.0.0.1,fork,reuseaddr" "TCP:$(box_gw "$1"):$port"
+  sleep 0.3
 }
