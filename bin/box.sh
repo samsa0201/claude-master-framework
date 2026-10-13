@@ -74,7 +74,8 @@ box_up() {   # <proj>: make sure the box runs; fail-closed (dies, never falls ba
   box_fwd "$p"
   exec {lk}>&-
 }
-box_down() {   # <proj>: remove box, sidecar, network and home volume (best effort, quiet)
+box_down() {   # <proj>: remove box, sidecar, network and home volume (best effort, quiet). The tailscale state volume
+              # <box>-ts stays: a later box of this name rejoins as the same node instead of <name>-1 (logout races containerboot)
   local n; n=$(bx "$1"); rm -f "$(P "$1")"/.team/run/*.pid; box_ok || return 0   # app pid files die with the box
   $DOCKER rm -f "$n" "$n-ts" >/dev/null 2>&1 || true
   $DOCKER network rm "$n" >/dev/null 2>&1 || true
@@ -124,8 +125,9 @@ box_ts() {   # <proj>: tailscale sidecar in the box netns (root there, so not eg
   local p=$1 n; n=$(bx "$p")
   [ -s "$TS_KEY" ] || { echo "warning: no $TS_KEY: $p is not on tailnet (team url $p shows the ssh -L fallback)" >&2; return 0; }
   # key: env of the sidecar only (separate pid namespace from the box), passed by name, never on the command line
-  TS_AUTHKEY=$(cat "$TS_KEY") $DOCKER run -d --name "$n-ts" --network "container:$n" \
-    -e TS_AUTHKEY -e TS_HOSTNAME="$p" -e TS_USERSPACE=true -e TS_STATE_DIR=/tmp "$TS_IMAGE" >/dev/null ||
+  # state on a volume: a recreated box comes back as the same node (same name), not <name>-1 next to its offline ghost
+  TS_AUTHKEY=$(cat "$TS_KEY") $DOCKER run -d --name "$n-ts" --network "container:$n" --volume "$n-ts:/var/lib/tailscale" \
+    -e TS_AUTHKEY -e TS_HOSTNAME="$p" -e TS_USERSPACE=true -e TS_STATE_DIR=/var/lib/tailscale "$TS_IMAGE" >/dev/null ||
     echo "warning: tailscale sidecar failed for $p (docker logs $n-ts)" >&2
 }
 box_ts_name() {   # <proj>: the sidecar's MagicDNS name (may get a -N suffix on collision), empty if none

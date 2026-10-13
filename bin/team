@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] | wait <id> [secs] | ls | close <proj> [role] | run <proj> [<name> "<cmd>"] | stop <proj> <name> | exec <proj> "<cmd>" | egress <proj> | url <proj> | https <proj> <port> | display start|stop | ui [port]
+# team new <proj> | attach <proj> <repo-path> [branch] | assign <proj> <role> "<task>" [--runtime R] [--model M] [--new] | wait <id> [secs] | ls | close <proj> [role|--box] | run <proj> [<name> "<cmd>"] | stop <proj> <name> | exec <proj> "<cmd>" | egress <proj> | url <proj> | https <proj> <port> | display start|stop | ui [port]
 # Workers = a coding-agent CLI (adapter agents/runtime/<R>.sh, default opencode) in tmux PANES of the window you run claude in (tagged @team=<proj>-<role>).
 set -euo pipefail
 ROOT=${STUDIO_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
@@ -131,7 +131,7 @@ T
     tmux select-layout -t "$pane" main-vertical   # claude stays big on the left, workers stacked right
   fi
   echo "$id" ;;
-wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone without .done
+wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone without .done | idle (3): pane unchanged TEAM_IDLE s, no .done
   td=$(task_dir "$1")   # only this task's project: another box can plant <id>.done/.pane in its own out/
   pn() { local f=$td/.team/out/$1.pane   # pane recorded at assign (a reused pane's @tid moves on)
     if [ -n "$td" ] && [ -f "$f" ]; then local q; q=$(cat "$f"); tmux display -p -t "$q" '#{pane_id}' 2>/dev/null || true
@@ -139,6 +139,7 @@ wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone wi
   p=$(pn "$1"); lim=${2:-}
   [ -n "$lim" ] || { [ -n "$p" ] && lim=$(tmux show-option -pqv -t "$p" @timeout); }   # inside || so set -e ignores an empty p
   lim=${lim:-900}; [[ $lim =~ ^[0-9]+$ ]] || die "bad wait limit: $lim"   # goes into bash arithmetic
+  idle=${TEAM_IDLE:-300}; [[ $idle =~ ^[0-9]+$ ]] || die "bad TEAM_IDLE: $idle"; last= since=0 st=$((idle < 15 ? 1 : 15))   # pane hash every st seconds
   for ((i=0; i<lim; i++)); do
     if [ -n "$td" ] && [ -e "$td/.team/out/$1.done" ]; then
       p=$(pn "$1"); [ -n "$p" ] && { t=$(tmux show-option -pqv -t "$p" @task); header "$p" "$1" "✓" "${t#* }"; }
@@ -146,6 +147,10 @@ wait)  # done (0) | timeout (1) | dead (2): worker exited or its pane is gone wi
     fi
     p=$(pn "$1")
     if [ -z "$p" ] || [ "$(tmux show-option -pqv -t "$p" @dead)" = 1 ]; then echo dead; exit 2; fi
+    if ((i % st == 0)); then   # a worker that stopped without touching .done sits idle until the timeout: say so early
+      s=$(tmux capture-pane -p -t "$p" | md5sum); [ "$s" = "$last" ] || { last=$s; since=$i; }
+      ((i - since >= idle)) && { echo idle; exit 3; }
+    fi
     sleep 1
   done; echo timeout; exit 1 ;;
 display) case ${1:-} in start) display_start ;; stop) display_stop ;; *) die "team display start|stop" ;; esac ;;
@@ -157,10 +162,14 @@ run)   p=${1:?team run <proj> [<name> \"<cmd>\"]}; d=$(readlink -f "$(P "$p")");
        box_up "$p"; mkdir -p "$d/.team/logs" "$d/.team/run"
        box_ps "$p" "$d" | grep -qx "$2 running" && die "$2 already running (team stop $p $2 first)"
        # setsid: own process group, so stop takes the dev server's children too; apps are firewalled like workers
-       $DOCKER exec -d -u "$BOX_UID:$BOX_GID" -w "$d" "$(bx "$p")" setsid bash -c 'echo $$ > "$1"; exec bash -c "$2" > "$3" 2>&1' \
+       h=$(box_ts_name "$p"); h=${h%%.*}; t0=$(date +%s)
+       # Vite rejects unknown Host headers: allow the tailnet name the user opens (http://<name>:<port>); Vite takes one host here
+       $DOCKER exec -d -u "$BOX_UID:$BOX_GID" -w "$d" -e "__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=${h:-$p}" "$(bx "$p")" setsid bash -c 'echo $$ > "$1"; exec bash -c "$2" > "$3" 2>&1' \
          _ "$d/.team/run/$2.pid" "$3" "$d/.team/logs/$2.log"
-       sleep 0.3; box_ps "$p" "$d" | grep -qx "$2 running" || die "failed to start $2 (see .team/logs/$2.log)"
-       echo "started $2 (log: .team/logs/$2.log)" ;;
+       # docker exec -d returns before the app writes its pid file: wait for it (max ~3s), then check it is still alive
+       sleep 0.3; for _ in {1..10}; do [ "$(stat -c %Y "$d/.team/run/$2.pid" 2>/dev/null || echo 0)" -ge "$t0" ] && break; sleep 0.3; done
+       box_ps "$p" "$d" | grep -qx "$2 running" || die "failed to start $2 (see .team/logs/$2.log)"
+       h=$(box_ts_name "$p"); echo "started $2 (log: .team/logs/$2.log)${h:+; tailnet host: ${h%%.*}}" ;;
 stop)  p=${1:?team stop <proj> <name>}; n=${2:?team stop <proj> <name>}; [[ $n =~ ^[a-z][a-z0-9-]*$ ]] || die "bad app name: $n"; f="$(readlink -f "$(P "$p")")/.team/run/$n.pid"
        [ -e "$f" ] || [ -L "$f" ] || die "not started: $n"; pid=$(box_pid "$f") || die "bad pid file: $f"
        if box_running "$p"; then $DOCKER exec "$(bx "$p")" kill -TERM -- "-$pid" 2>/dev/null || true; fi
@@ -183,7 +192,10 @@ https) p=${1:?team https <proj> <port>}; port=${2:?team https <proj> <port>}
 ui)    "$ROOT/ui/build.sh" || { [ -f "$ROOT/ui/dist/index.html" ] && echo "dashboard rebuild failed: serving the previous build" >&2 || die "dashboard not built (see above)"; }
        exec python3 "$ROOT/ui/serve.py" "${1:-7777}" ;;   # read-only dashboard: workers, tasks, docs, diffs, terminals
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;
-close) tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$1" -v r="${2:-}" 'r=="" && index($2,p"-")==1 {print $1} r!="" && ($2==p"-"r || $2 ~ ("^"p"-"r"-[0-9]+$")) {print $1}' | xargs -r -n1 tmux kill-pane -t
-       [ -n "${2:-}" ] || [ "$SANDBOX" = none ] || box_down "$1" ;;   # whole project: box, network, home volume go too
+close) p=${1:?team close <proj> [<role>|--box]}; r=${2:-}; [ "$r" = --box ] && r=
+       tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$p" -v r="$r" 'r=="" && index($2,p"-")==1 {print $1} r!="" && ($2==p"-"r || $2 ~ ("^"p"-"r"-[0-9]+$")) {print $1}' | xargs -r -n1 tmux kill-pane -t
+       # the box (apps, home volume, tailnet name) goes only when asked: a forgotten role must not wipe it
+       if [ "${2:-}" = --box ]; then [ "$SANDBOX" = none ] || box_down "$p"
+       elif [ -z "$r" ] && [ "$SANDBOX" != none ] && box_running "$p"; then echo "workers closed; box kept (team close $p --box removes it)" >&2; fi ;;
 *) sed -n '2p' "$0"; exit 1 ;;
 esac

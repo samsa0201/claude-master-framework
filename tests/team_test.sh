@@ -144,6 +144,7 @@ check "new excludes .team from git" git -C "$TEAM_PROJECTS/gx" check-ignore -q .
 ida=$("$T" assign w1 dev "FAKE_HANG" --runtime fake); sleep 1
 idb=$("$T" assign w1 dev "FAKE_HANG" --runtime fake)
 check "wait on superseded id in live pane -> timeout" test "$(waits "$ida" 3)" = timeout
+check "worker silent past TEAM_IDLE without .done -> idle" bash -c "r=\$(TEAM_IDLE=3 '$T' wait $idb 30); [ \$? = 3 ] && [ \"\$r\" = idle ]"
 # team ui builds the dashboard on demand (ui/build.sh), then serves it. Fake studio root; fake npm installs a fake pinned bun.
 U=$(mktemp -d); mkdir -p "$U/ui/web/src" "$U/fakebin"; cp "$R/ui/build.sh" "$U/ui/"; mkdir -p "$U/bin"; cp "$R/bin/box.sh" "$U/bin/"
 echo 'import sys; print("SERVED", sys.argv[1])' > "$U/ui/serve.py"; echo one > "$U/ui/web/src/a.ts"

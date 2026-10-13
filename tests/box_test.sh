@@ -10,7 +10,7 @@ unset TMUX TEAM_SANDBOX
 T="$R/bin/team"; fail=0; U=$(id -u); H=$(mktemp -d); M=$(mktemp -d); s1=; s2=
 export R U   # helpers below are exported: checks call them through bash -c
 cleanup() {
-  for p in b1 b2 b3 b4 b5 b6 b7 b9 a1; do "$T" close "$p" >/dev/null 2>&1; done
+  for p in b1 b2 b3 b4 b5 b6 b7 b9 a1; do "$T" close "$p" --box >/dev/null 2>&1; done
   docker rm -f $(docker ps -aq --filter name=studiotest-) >/dev/null 2>&1
   [ -n "$s1" ] && kill "$s1" "$s2" 2>/dev/null; tmux kill-server 2>/dev/null; rm -rf "$TEAM_PROJECTS" "$H" "$M"
 }
@@ -115,8 +115,10 @@ export TMUX_PANE=$(tmux list-panes -t t -F '#{pane_id}' | head -1)
 id=$("$T" assign b1 pm "hello" --runtime fake)
 check "fake worker ran inside the box" bash -c "[ \"\$('$T' wait $id 60)\" = done ] && grep -qx 'env home=/box/home' '$TEAM_PROJECTS/b1/.team/out/$id.md'"
 check "worker output owned by the host user" test "$(stat -c %u "$TEAM_PROJECTS/b1/.team/out/$id.md")" = "$U"
-"$T" close b1
-check "team close <proj> removes the box" bash -c "! docker ps -a --format '{{.Names}}' | grep -qx studiotest-b1"
+"$T" close b1 2>/dev/null
+check "team close <proj> keeps the box" bash -c "docker ps --format '{{.Names}}' | grep -qx studiotest-b1"
+"$T" close b1 --box
+check "team close <proj> --box removes the box" bash -c "! docker ps -a --format '{{.Names}}' | grep -qx studiotest-b1"
 # --- lead commands: run / stop / exec / egress; two boxes on the same port ---
 "$T" new b2 >/dev/null; "$T" new b4 >/dev/null
 "$T" run b2 web "python3 -m http.server 5173" >/dev/null
@@ -138,8 +140,10 @@ in_box b2 'sleep 300 >/dev/null 2>&1 & echo $!' > "$TEAM_PROJECTS/b2/.team/run/f
 check "pid of a non-group-leader is not an app" bash -c "'$T' run b2 | grep -qx 'fake stopped'"
 check "run <name> without cmd -> usage, not list" bash -c "o=\$('$T' run b2 web 2>&1); [ \$? -ne 0 ] && grep -q 'team run' <<<\"\$o\""
 check "stop validates the name" not "$T" stop b2 ../x
+"$T" run b2 env 'echo "vite=$__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS"; sleep 30' >/dev/null; sleep 0.5
+check "run allows the box host in Vite" grep -qx 'vite=b2' "$TEAM_PROJECTS/b2/.team/logs/env.log"
 check "run reports a failed start with the log" bash -c "o=\$('$T' run b2 bad 'exit 1' 2>&1); [ \$? -ne 0 ] && grep -q '.team/logs/bad.log' <<<\"\$o\" && ! grep -q '^started' <<<\"\$o\""
-"$T" close b2; "$T" close b4
+"$T" close b2 --box; "$T" close b4 --box
 check "close removes the app pid files" bash -c "! ls '$TEAM_PROJECTS'/b4/.team/run/*.pid 2>/dev/null"
 # --- tailscale: no key -> warning only; url falls back to ssh -L ---
 "$T" new b5 >/dev/null
@@ -149,7 +153,7 @@ check "no sidecar without a key" not docker inspect studiotest-b5-ts
 o=$("$T" url b5)
 check "url shows box ip and ssh -L fallback" bash -c '[[ "$1" == *"box ip: "* && "$1" == *"ssh -L <port>:"* ]]' _ "$o"
 check "https without sidecar: clear error" bash -c "o=\$('$T' https b5 5173 2>&1); [ \$? -ne 0 ] && grep -q 'no tailscale sidecar' <<<\"\$o\""
-"$T" close b5
+"$T" close b5 --box
 # --- .team is read-only in the box except out/ logs/ run/; host never follows box-planted links ---
 "$T" new b6 >/dev/null; D6=$TEAM_PROJECTS/b6; bt box_up b6
 check "box cannot write .team/roles" not in_box b6 "touch '$D6/.team/roles/x.md'"
@@ -165,7 +169,7 @@ check "planted .pane symlink is replaced, host file untouched" bash -c "[ \"\$(c
 echo 1 > "$H/one"; mkdir -p "$D6/.team/run"; in_box b6 "ln -s '$H/one' '$D6/.team/run/leak.pid'"
 check "run/*.pid symlink to a host file: listed stopped" bash -c "'$T' run b6 | grep -qx 'leak stopped'"
 check "stop refuses a run/*.pid symlink" bash -c "! '$T' stop b6 leak 2>/dev/null && docker exec studiotest-b6 true"
-"$T" close b6
+"$T" close b6 --box
 # --- a plain repo's box-planted .git/commondir does not steer the mounts to another host repo ---
 "$T" new b7 >/dev/null; O=$(mktemp -d); git -C "$O" init -q; bt box_up b7
 in_box b7 "echo '$O/.git' > '$TEAM_PROJECTS/b7/.git/commondir'"
@@ -185,7 +189,7 @@ mkdir -p "$M/victim"; rm -rf "$dl/.team/out"; ln -s "$M/victim" "$dl/.team/out"
 o=$("$T" exec bl true 2>&1)
 check "symlinked .team/out: box refused" bash -c '[[ "$1" == *"is a symlink"* ]]' _ "$o"
 check "symlinked .team/out: no box created" not docker container inspect studiotest-bl
-rm "$dl/.team/out"; "$T" close bl
+rm "$dl/.team/out"; "$T" close bl --box
 
 # @@MORE_BOX_TESTS@@ (later tasks insert their blocks above this line)
 [ $fail = 0 ] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }
