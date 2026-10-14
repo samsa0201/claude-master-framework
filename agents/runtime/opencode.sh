@@ -22,8 +22,10 @@ rt_env() {
     chrome=$(pw_chrome)
     [ -f "$d/.team/auth.json" ] && st=",\"--storage-state\",\"$d/.team/auth.json\""   # login state placed by lead (SKILL.md SSH flow)
     # XDG_CONFIG_HOME: the inherited one is read-only in the box and chromium's crashpad dies without a writable config dir
+    # --isolated: in-memory profile per session, loaded from auth.json; the default persistent profile lives on the box home
+    #   volume and carried one QA run's localStorage (fake tokens) into the next
     # --no-sandbox: AppArmor blocks the chromium sandbox on this host; QA only opens local dev apps
-    mcp=",\"mcp\":{\"playwright\":{\"type\":\"local\",\"enabled\":true,\"environment\":{\"DISPLAY\":\"$TEAM_DISPLAY\",\"XDG_CONFIG_HOME\":\"$d/.team/out/browser/.xdg\"},\"command\":[\"npx\",\"-y\",\"@playwright/mcp@0.0.83\",\"--executable-path\",\"$chrome\",\"--viewport-size\",\"1440,900\",\"--output-dir\",\"$d/.team/out/browser\",\"--save-session\",\"--no-sandbox\"$st]}}"
+    mcp=",\"mcp\":{\"playwright\":{\"type\":\"local\",\"enabled\":true,\"environment\":{\"DISPLAY\":\"$TEAM_DISPLAY\",\"XDG_CONFIG_HOME\":\"$d/.team/out/browser/.xdg\"},\"command\":[\"npx\",\"-y\",\"@playwright/mcp@0.0.83\",\"--executable-path\",\"$chrome\",\"--viewport-size\",\"1440,900\",\"--output-dir\",\"$d/.team/out/browser\",\"--save-session\",\"--no-sandbox\",\"--isolated\"$st]}}"
   fi
   echo "OPENCODE_CONFIG_CONTENT={\"instructions\":[\"$d/.team/role-$role.md\"]$mcp}"
 }
