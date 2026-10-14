@@ -9,7 +9,8 @@
       "options": { "baseURL": "{env:NINEROUTER_URL}", "apiKey": "{env:NINEROUTER_API_KEY}" },
       "models": {
         "fidt/qwen3.8-flash": { "name": "qwen3.8-flash" },
-        "fidt/kCode": { "name": "kCode" }
+        "fidt/kCode": { "name": "kCode" },
+        "fidt/deepseek/deepseek-v4-pro": { "name": "deepseek-v4-pro" }
       }
     }
   },

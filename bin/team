@@ -194,6 +194,8 @@ ui)    "$ROOT/ui/build.sh" || { [ -f "$ROOT/ui/dist/index.html" ] && echo "dashb
 ls)    tmux list-panes -a -F '#{pane_id} #{@team}' | awk 'NF==2' || true ;;
 close) p=${1:?team close <proj> [<role>|--box]}; r=${2:-}; [ "$r" = --box ] && r=
        tmux list-panes -a -F '#{pane_id} #{@team}' | awk -v p="$p" -v r="$r" 'r=="" && index($2,p"-")==1 {print $1} r!="" && ($2==p"-"r || $2 ~ ("^"p"-"r"-[0-9]+$")) {print $1}' | xargs -r -n1 tmux kill-pane -t
+       # killing the pane only kills the docker exec client: the worker inside the box keeps running and editing files
+       [ "$SANDBOX" = none ] || ! box_running "$p" || $DOCKER exec "$(bx "$p")" pkill -f "\.team/tasks/$p-${r:+$r-[0-9]}" || true
        # the box (apps, home volume, tailnet name) goes only when asked: a forgotten role must not wipe it
        if [ "${2:-}" = --box ]; then [ "$SANDBOX" = none ] || box_down "$p"
        elif [ -z "$r" ] && [ "$SANDBOX" != none ] && box_running "$p"; then echo "workers closed; box kept (team close $p --box removes it)" >&2; fi ;;
