@@ -8,10 +8,10 @@
       "name": "9router",
       "options": { "baseURL": "{env:NINEROUTER_URL}", "apiKey": "{env:NINEROUTER_API_KEY}" },
       "models": {
-        "fidt/qwen3.8-flash": { "name": "qwen3.8-flash" },
+        "fidt/qwen3.8-flash": { "name": "qwen3.8-flash", "attachment": true, "modalities": { "input": ["text", "image"], "output": ["text"] } },
         "fidt/kCode": { "name": "kCode" },
         "fidt/deepseek/deepseek-v4-pro": { "name": "deepseek-v4-pro" },
-        "fidt/deepseek-v4.1-flash": { "name": "deepseek-v4.1-flash" }
+        "fidt/deepseek-v4.1-flash": { "name": "deepseek-v4.1-flash", "attachment": true, "modalities": { "input": ["text", "image"], "output": ["text"] } }
       }
     }
   },
