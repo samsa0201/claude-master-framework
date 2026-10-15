@@ -39,6 +39,7 @@ Roles (`agents/<role>.md`, base prompt + defaults): `pm`, `ux`, `dev` (TDD), `qa
 ## Rules
 - Never read or print API keys. Key lives only in the `NINEROUTER_API_KEY` env var of the shell running claude (passed into worker panes by `team`).
 - Each product is its own git repo under `projects/` (gitignored here). Improve the framework by editing `agents/`, `bin/team`, this file; commit here.
+- Session name follows the task: when you start a project/feature or the user switches to a different task, rename your own tmux window to `<project>-<task>` (short, kebab-case): `tmux rename-window -t "$TMUX_PANE" "<name>"`. This is the one non-`@team` tmux change allowed (your own window only). The Claude Code session title (`/resume` list, pane title) is set only by the user: ask them once to run `/rename <name>` with the same name.
 - Only touch tmux panes tagged `@team`. Use `team ls`, `team close <name> [role]` (no role: all workers of the project; the box stays).
 - Keep tasks small and self-contained; workers run cheap models and need explicit file paths + done criteria.
 - Parallel workers share ONE worktree: give each task a disjoint list of files ("touch ONLY ...") and say other workers are editing other files. Pure-logic slices with a fixed typed API (types in the task) can run in parallel with the UI slice that consumes them. Never run two workers on the same task: before reassigning check `docker exec <box> pgrep -af opencode` (a `team close` older than 58630ea left the process running).
