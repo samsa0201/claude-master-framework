@@ -62,7 +62,7 @@ check "worktree config.worktree is read-only" not in_box a1 "echo x > '$M/.git/w
 check "worktree can create a new branch" in_box a1 "cd '$TEAM_PROJECTS/a1' && git switch -q -c feat/a1-2"
 mkdir -p "$H/stub"; printf '#!/bin/sh\necho /usr/bin/node\n' > "$H/stub/node"; chmod +x "$H/stub/node"
 check "distro node (/usr/bin) does not mount /usr" bash -c "! PATH='$H/stub':\$PATH bt box_mounts '$TEAM_PROJECTS/b1' | grep -q -- '--volume=/usr:'"
-check "real node prefix is mounted" bash -c "x=\$(dirname \$(dirname \$(node -p process.execPath))); case \$x in /|/usr|/usr/local) exit 0;; esac; bt box_mounts '$TEAM_PROJECTS/b1' | grep -qx -- \"--volume=\$x:\$x:ro\""
+check "real node prefix is mounted" bash -c "x=\$(dirname \$(dirname \$(node -p process.execPath))); x=\${x%%/Cellar/*}; case \$x in /|/usr|/usr/local) exit 0;; esac; bt box_mounts '$TEAM_PROJECTS/b1' | grep -qx -- \"--volume=\$x:\$x:ro\""
 check "not a git repo -> refused" bash -c "mkdir -p '$TEAM_PROJECTS/ng'; ! bt box_up ng"
 bt box_down a1
 check "box_down removes container, network, volume" bash -c "! docker ps -a --format '{{.Names}}' | grep -qx studiotest-a1 && ! docker network ls --format '{{.Name}}' | grep -qx studiotest-a1 && ! docker volume ls -q | grep -qx studiotest-a1-home"
