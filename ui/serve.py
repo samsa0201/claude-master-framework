@@ -99,7 +99,7 @@ def state():
             t["end"] = os.path.getmtime(done) if os.path.exists(done) else None
     for t in tasks.values():
         if "role" not in t:  # no task file left: id = <proj>-<role>-HHMMSS, proj may contain dashes
-            rest = t["id"][len(t["proj"]) + 1:] if t["id"].startswith(t["proj"] + "-") else t["id"].rsplit("-", 2)[-2]
+            rest = t["id"][len(t["proj"]) + 1:] if t["id"].startswith(t["proj"] + "-") else t["id"].rsplit("-", 2)[-2] if t["id"].count("-") >= 2 else t["id"]  # hand-named (qa1.md): id is the role
             t["role"] = rest.rsplit("-", 1)[0] if "-" in rest else rest
         t["worker"] = live.get(t["id"])
         # desk = worker pane (web-dev-2, ...), so parallel --new workers of one role don't share a seat

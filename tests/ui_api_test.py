@@ -63,6 +63,7 @@ class UiApiTest(unittest.TestCase):
         write(f"{P}/fresh/a.txt", "fresh file\n"), os.makedirs(f"{P}/fresh/.team"), sh(f"{P}/fresh", "init", "-q")
         # norepo: no .git of its own
         os.makedirs(f"{P}/norepo/.team"), write(f"{P}/norepo/docs/idea.md", "idea")
+        write(f"{P}/norepo/.team/tasks/qa1.md", "hand-written task, no header\n")   # id without <proj>-<role>-HHMMSS
         os.makedirs(f"{P}/.display")
         # dist: a built SPA
         write(f"{serve.DIST}/index.html", "<!doctype html><title>app</title>")
@@ -103,6 +104,7 @@ class UiApiTest(unittest.TestCase):
         self.assertEqual(done["summary"], "all built")
         self.assertEqual((stale["status"], stale["seat"]), ("stale", "qa-2"))   # no pane, no .done
         self.assertEqual((s["live"], s["panes"]), ([], []))
+        self.assertEqual(by["qa1"]["role"], "qa1")
 
     def test_term_unknown_pane(self):
         self.assertEqual(self.get("/api/term?tag=nope")[1], {"tag": "nope", "text": None})
