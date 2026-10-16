@@ -15,7 +15,8 @@ box_ok() { command -v "$DOCKER" >/dev/null 2>&1 && $DOCKER info >/dev/null 2>&1;
 box_running() { [ "$($DOCKER inspect -f '{{.State.Running}}' "$(bx "$1")" 2>/dev/null)" = true ]; }
 node_prefix() {   # prints node's install prefix, or nothing for system prefixes (/, /usr, /usr/local: the image has those)
   local x; x=$(node -p process.execPath 2>/dev/null) || return 0
-  x=$(dirname "$(dirname "$x")"); case $x in /|/usr|/usr/local) ;; *) echo "$x" ;; esac
+  x=$(dirname "$(dirname "$x")"); x=${x%%/Cellar/*}   # Homebrew node needs the prefix's ld.so and lib/, opt/ deps, not just its Cellar dir
+  case $x in /|/usr|/usr/local) ;; *) echo "$x" ;; esac
 }
 box_mounts() {   # <proj dir>: one docker --volume=... per line; host paths keep their path inside the box
   local d=$1 g gd x
