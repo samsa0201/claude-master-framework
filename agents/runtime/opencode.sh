@@ -6,7 +6,7 @@ rt_preflight() {   # key check first: it is the most common failure and needs no
   [ -n "${NINEROUTER_API_KEY:-}" ] || die "NINEROUTER_API_KEY not set in this shell"
   [ -x "$OC" ] || die "opencode not installed: run ./install.sh"
   [ "$browser" = none ] || [ -n "$(pw_chrome)" ] || die "no Playwright chromium in ${TEAM_PW_CACHE:-~/.cache/ms-playwright} (ask the user before downloading)"
-  curl -sf -m 5 -o /dev/null -H "Authorization: Bearer $NINEROUTER_API_KEY" "$NR/models" || die "9router unreachable or key rejected: $NR"
+  curl -sf -m 20 -o /dev/null -H "Authorization: Bearer $NINEROUTER_API_KEY" "$NR/models" || die "9router unreachable or key rejected: $NR"
 }
 pw_chrome() { ls -d "${TEAM_PW_CACHE:-$HOME/.cache/ms-playwright}"/chromium-*/chrome-linux64/chrome 2>/dev/null | sort -V | tail -1; }
 rt_env() {

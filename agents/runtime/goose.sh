@@ -6,7 +6,7 @@ rt_preflight() {
   [ "$browser" = none ] || die "goose runtime: no browser support (use --runtime opencode for $role)"
   [ -n "${NINEROUTER_API_KEY:-}" ] || die "NINEROUTER_API_KEY not set in this shell"
   [ -x "$GO" ] || die "goose not installed: run ./install.sh"
-  curl -sf -m 5 -o /dev/null -H "Authorization: Bearer $NINEROUTER_API_KEY" "$NR/models" || die "9router unreachable or key rejected: $NR"
+  curl -sf -m 20 -o /dev/null -H "Authorization: Bearer $NINEROUTER_API_KEY" "$NR/models" || die "9router unreachable or key rejected: $NR"
 }
 rt_env() {
   echo "XDG_CONFIG_HOME=$ROOT/runtime-home/goose"; echo "XDG_DATA_HOME=$ROOT/.runtime/data"; echo "XDG_STATE_HOME=$ROOT/.runtime/state"
