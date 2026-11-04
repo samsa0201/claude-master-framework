@@ -19,6 +19,10 @@ up() { [ -f "$RUN/$1.pid" ] && kill -0 "$(cat "$RUN/$1.pid")" 2>/dev/null; }
 bg() { local n=$1; shift; up "$n" || { setsid nohup "$@" >"$RUN/$n.log" 2>&1 & echo $! > "$RUN/$n.pid"; }; }
 display_start() {   # ponytail: one shared display, browser workers run one at a time; per-worker displays if parallel QA is needed
   mkdir -p "$RUN"
+  if ! { up xvfb && ps -o args= -p "$(cat "$RUN/xvfb.pid")" | grep -q "^Xvfb $TEAM_DISPLAY "; } && [ -S "/tmp/.X11-unix/X${TEAM_DISPLAY#:}" ]; then   # a real display already runs (X.org :0 streamed by Sunshine): draw on it, no Xvfb/noVNC
+    DISPLAY=$TEAM_DISPLAY xhost "+SI:localuser:$(id -un)" >/dev/null || die "cannot reach display $TEAM_DISPLAY (xhost)"   # box talks over the mounted socket without a cookie
+    echo "browser live view: display $TEAM_DISPLAY (Moonlight/Sunshine)" >&2; return
+  fi
   bg xvfb Xvfb "$TEAM_DISPLAY" -screen 0 1440x900x24 -nolisten tcp; sleep 1
   bg vnc x11vnc -display "$TEAM_DISPLAY" -rfbport "$VNC_PORT" -localhost -nopw -forever -shared -quiet
   bg web websockify --web /usr/share/novnc "127.0.0.1:$WEB_PORT" "127.0.0.1:$VNC_PORT"

@@ -94,6 +94,10 @@ check "non-browser role not blocked" bash -c "i=\$('$T' assign p5 pm x --runtime
 check "lock released after close" bash -c "i=\$('$T' assign p5 qa-3 x --runtime fake) && '$T' wait \$i 20 | grep -q done"
 "$T" display stop
 check "display stop kills Xvfb" bash -c "! pgrep -a -x Xvfb | grep -q ' $TEAM_DISPLAY '"
+Xvfb :96 -nolisten tcp >/dev/null 2>&1 & xp=$!; for _ in {1..30}; do [ -S /tmp/.X11-unix/X96 ] && break; sleep 0.1; done   # stands in for X.org :0
+check "existing display: used as is, no Xvfb/noVNC of ours" bash -c "TEAM_DISPLAY=:96 '$T' display start 2>&1 | grep -q 'display :96' && [ ! -e '$TEAM_PROJECTS/.display/xvfb.pid' ] && ! ss -ltn | grep -q '127.0.0.1:$TEAM_WEB_PORT'"
+check "existing display: display stop leaves it running" bash -c "TEAM_DISPLAY=:96 '$T' display stop; kill -0 $xp"
+kill $xp
 check "opencode browser env adds playwright MCP on display" bash -c "
   ROOT='$R' d=/tmp/p role=qa model=fidt/qwen3.8-flash browser=qa msg=m NINEROUTER_API_KEY=k TEAM_DISPLAY=:97
   source '$R/agents/runtime/opencode.sh'

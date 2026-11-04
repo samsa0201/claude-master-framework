@@ -35,6 +35,7 @@ Cô lập: worker opencode/goose dùng thư mục XDG config/data riêng của s
 Chromium của QA chạy với `--no-sandbox` (AppArmor trên máy này chặn sandbox của nó).
 
 - noVNC/x11vnc không có mật khẩu và chỉ lắng nghe trên localhost: ổn trên máy một người dùng.
+- `TEAM_DISPLAY=:0` (đặt trong `~/.config/fish/conf.d/studio.fish`): khi display đã có sẵn (X.org `:0` do Sunshine stream), `team` vẽ browser QA lên đó, không bật Xvfb/noVNC, và cấp `xhost +SI:localuser:<user>` vì box nói chuyện với X qua socket mount vào, không có cookie. Bỏ biến đó thì quay về Xvfb `:99` + noVNC.
 - goose: `base_url` của provider cố định là localhost:20128 (NINEROUTER_URL không áp dụng cho goose).
 
 ## Box theo project (cô lập)
