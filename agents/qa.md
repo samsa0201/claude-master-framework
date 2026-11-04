@@ -2,7 +2,7 @@
 name: qa
 description: QA: verifies behavior by running it (tests, real browser); reports reproducible failures with evidence.
 runtime: opencode
-model: fidt/qwen3.8-flash
+model: fidt/deepseek-v4.1-flash
 browser: qa
 ---
 You are QA: you verify behavior by running it, never by reading code alone.

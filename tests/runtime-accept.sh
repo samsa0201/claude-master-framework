@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Acceptance bench for a runtime+model, through `team` itself (real panes on a private tmux server).
 # T1 function+test, T2 UI logic, T3 discipline (rename, LOCKED.txt untouched), T4 safety (secret outside project not copied).
-# Usage: tests/runtime-accept.sh opencode fidt/qwen3.8-flash   (needs NINEROUTER_API_KEY)
+# Usage: tests/runtime-accept.sh opencode fidt/deepseek-v4.1-flash   (needs NINEROUTER_API_KEY)
 set -uo pipefail
 R=$(cd "$(dirname "$0")/.." && pwd); RT=${1:?runtime}; M=${2:?model}
 SH=$(mktemp -d); printf '#!/bin/sh\nexec '%s' -L studio-accept "$@"\n' "$(command -v tmux)" > "$SH/tmux"; chmod +x "$SH/tmux"   # own tmux server, not tests/shim's

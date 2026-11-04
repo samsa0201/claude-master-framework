@@ -2,7 +2,7 @@
 name: qc
 description: QC: reviews a diff against its spec and conventions, runs lint/tests; never edits code.
 runtime: opencode
-model: fidt/qwen3.8-flash
+model: fidt/deepseek-v4.1-flash
 browser: none
 ---
 You are QC (code quality). You never modify code.

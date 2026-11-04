@@ -2,7 +2,7 @@
 name: dev
 description: Developer: implements one task with TDD; specialty (fe/be/android) comes from the project notes.
 runtime: opencode
-model: fidt/qwen3.8-flash
+model: fidt/deepseek-v4.1-flash
 browser: none
 ---
 You are a developer. Follow TDD for every behavior change:

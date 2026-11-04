@@ -37,7 +37,7 @@ check "suffix role uses base dev.md" grep -q "TDD" "$TEAM_PROJECTS/p2/.team/out/
 check "flex body appended" grep -q "FLEX-FE" "$TEAM_PROJECTS/p2/.team/out/$id.md"
 check "flex model overrides base" grep -q "model=fidt/kCode" "$TEAM_PROJECTS/p2/.team/out/$id.md"
 id=$("$T" assign p2 dev-be "x" --runtime fake); waits "$id" >/dev/null
-check "base default model" grep -q "model=fidt/qwen3.8-flash" "$TEAM_PROJECTS/p2/.team/out/$id.md"
+check "base default model" grep -q "model=fidt/deepseek-v4.1-flash" "$TEAM_PROJECTS/p2/.team/out/$id.md"
 id=$("$T" assign p2 dev-fe "y" --runtime fake --model fidt/other --new); waits "$id" >/dev/null
 check "--model beats flex" grep -q "model=fidt/other" "$TEAM_PROJECTS/p2/.team/out/$id.md"
 id=$("$T" assign p2 writer "x" --runtime fake); waits "$id" >/dev/null

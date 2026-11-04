@@ -71,7 +71,7 @@ assign)
   n=2; while [ -e "$d/.team/tasks/$id.md" ]; do id="${id%-[0-9]}-$n"; n=$((n+1)); done   # same-second assigns must not overwrite each other's task
   a=$(base_of "$role"); flex="$d/.team/roles/$role.md"
   runtime=$(pick runtime "$ropt" opencode)
-  model=$(pick model "$mopt" fidt/qwen3.8-flash)
+  model=$(pick model "$mopt" fidt/deepseek-v4.1-flash)
   browser=$(pick browser "" none)
   case $model in *kCode*) dt=1800 ;; *) dt=900 ;; esac   # kCode upstream can queue 100-200s per request
   timeout=$(pick timeout "" $dt)
