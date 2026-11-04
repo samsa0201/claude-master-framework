@@ -18,6 +18,7 @@ node_prefix() {   # prints node's install prefix, or nothing for system prefixes
   x=$(dirname "$(dirname "$x")"); x=${x%%/Cellar/*}   # Homebrew node needs the prefix's ld.so and lib/, opt/ deps, not just its Cellar dir
   case $x in /|/usr|/usr/local) ;; *) echo "$x" ;; esac
 }
+dsh_node() { echo "${TEAM_DSH_NODE:-/home/linuxbrew/.linuxbrew/bin/node}"; }
 box_mounts() {   # <proj dir>: one docker --volume=... per line; host paths keep their path inside the box
   local d=$1 g gd x
   g=$d/.git gd=$d/.git   # plain repo: never ask git, it follows a box-planted .git/commondir to any host repo
@@ -37,8 +38,10 @@ box_mounts() {   # <proj dir>: one docker --volume=... per line; host paths keep
   echo "--volume=$g/config:$g/config:ro"; echo "--volume=$g/hooks:$g/hooks:ro"
   [ -e "$gd/config.worktree" ] || : > "$gd/config.worktree"   # read when extensions.worktreeConfig is on (git sparse-checkout): same host-code risk as config
   echo "--volume=$gd/config.worktree:$gd/config.worktree:ro"
-  for x in "$ROOT/.runtime/opencode" "$ROOT/.runtime/goose" "$ROOT/runtime-home"; do [ -e "$x" ] && echo "--volume=$x:$x:ro"; done
+  for x in "$ROOT/.runtime/opencode" "$ROOT/.runtime/goose" "$ROOT/.runtime/dsh" "$ROOT/runtime-home"; do [ -e "$x" ] && echo "--volume=$x:$x:ro"; done
   x=$(node_prefix); [ -n "$x" ] && echo "--volume=$x:$x:ro"
+  y=$(dirname "$(dirname "$(dsh_node)")"); y=${y%%/Cellar/*}   # dsh needs node >= 24, often not the shell's node
+  [ -e "$ROOT/.runtime/dsh" ] && [ -x "$(dsh_node)" ] && [ "$y" != "$x" ] && echo "--volume=$y:$y:ro"
   [ -x "$HOME/.bun/bin/bun" ] && echo "--volume=$HOME/.bun/bin/bun:$HOME/.bun/bin/bun:ro"   # not the rest of ~/.bun (9router lives there)
   x=${TEAM_PW_CACHE:-$HOME/.cache/ms-playwright}; [ -d "$x" ] && echo "--volume=$x:$x:ro"
   [ -d /tmp/.X11-unix ] && echo "--volume=/tmp/.X11-unix:/tmp/.X11-unix"   # QA browser draws on the shared Xvfb display

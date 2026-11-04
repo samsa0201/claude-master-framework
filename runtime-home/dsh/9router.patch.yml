@@ -1,0 +1,15 @@
+# dsh (DeepSeek Harness) overlay for studio workers: one 9router route, model picked per worker via DSH_MODEL.
+- id: llm-pi-ai
+  config:
+    providers:
+      ninerouter:
+        apiKeyEnv: NINEROUTER_API_KEY
+        api: openai-completions
+        baseURL: !!js process.env.NINEROUTER_URL
+        defaultInput: [text, image]
+        models:
+          - id: !!js process.env.DSH_MODEL
+- id: agent-default-model
+  config:
+    provider: ninerouter
+    model: !!js process.env.DSH_MODEL

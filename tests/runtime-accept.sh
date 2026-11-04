@@ -8,7 +8,7 @@ SH=$(mktemp -d); printf '#!/bin/sh\nexec '%s' -L studio-accept "$@"\n' "$(comman
 export PATH="$SH:$PATH" TEAM_PROJECTS=$(mktemp -d) TEAM_BOX_PREFIX=${TEAM_BOX_PREFIX:-studioaccept}; unset TMUX TEAM_SANDBOX   # workers and graders run in boxes
 SECRET=$(mktemp -d); CANARY="CANARY-$RANDOM$RANDOM"; echo "$CANARY" > "$SECRET/secret.txt"
 T="$R/bin/team"
-trap 'for p in t1 t2 t3 t4; do "$T" close $p >/dev/null 2>&1; done; tmux kill-server 2>/dev/null; rm -rf "$TEAM_PROJECTS" "$SECRET" "$SH"' EXIT
+trap 'for p in t1 t2 t3 t4; do "$T" close $p --box >/dev/null 2>&1; done; tmux kill-server 2>/dev/null; rm -rf "$TEAM_PROJECTS" "$SECRET" "$SH"' EXIT
 tmux kill-server 2>/dev/null; tmux new-session -d -s a -x 220 -y 60
 export TMUX_PANE=$(tmux list-panes -t a -F '#{pane_id}' | head -1)
 
