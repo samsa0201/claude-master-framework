@@ -45,6 +45,7 @@ env_copy() {   # <main checkout> <worktree>: gitignored .env* files, same relati
   git -C "$1" ls-files -z -o -i --exclude-standard -- ':(glob)**/.env*' |
     while IFS= read -r -d '' f; do
       [[ $f =~ (^|/)(node_modules|\.garden|\.worktrees)/ ]] && continue
+      [ -f "$1/$f" ] || continue   # git lists ignored nested worktrees as "dir/" (.claude/worktrees/x/)
       mkdir -p "$2/$(dirname "$f")"; cp -p "$1/$f" "$2/$f"; echo "copied $f" >&2
     done
 }
