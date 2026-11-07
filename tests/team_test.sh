@@ -82,7 +82,7 @@ check "opencode env isolates XDG dirs" bash -c "
   grep -qx \"XDG_CONFIG_HOME=$R/runtime-home/xdg\" <<<\"\$e\" && grep -qx \"XDG_DATA_HOME=$R/.runtime/data\" <<<\"\$e\""
 check "opencode env NINEROUTER_URL default + override" bash -c "
   ROOT='$R' d=/tmp/p role=dev model=m browser=none msg=m NINEROUTER_API_KEY=k
-  source '$R/agents/runtime/opencode.sh'; rt_env | grep -qx NINEROUTER_URL=http://localhost:20128/v1
+  source '$R/agents/runtime/opencode.sh'; rt_env | grep -qx NINEROUTER_URL=http://127.0.0.1:20128/v1
   NINEROUTER_URL=http://x:1/v1; source '$R/agents/runtime/opencode.sh'; rt_env | grep -qx NINEROUTER_URL=http://x:1/v1"
 "$T" new p5 >/dev/null
 id=$("$T" assign p5 qa "FAKE_HANG" --runtime fake)

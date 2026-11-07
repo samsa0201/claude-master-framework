@@ -86,7 +86,7 @@ box_down() {   # <proj>: remove box, sidecar, network and home volume (best effo
   $DOCKER volume rm "$n-home" >/dev/null 2>&1 || true
 }
 EGRESS_DEFAULT=(registry.npmjs.org registry.yarnpkg.com pypi.org files.pythonhosted.org)
-nr_port() { local u=${NINEROUTER_URL:-http://localhost:20128/v1} d=80; [[ $u == https:* ]] && d=443; u=${u#*://}; u=${u%%/*}; [[ $u == *:* ]] && echo "${u##*:}" || echo $d; }
+nr_port() { local u=${NINEROUTER_URL:-http://127.0.0.1:20128/v1} d=80; [[ $u == https:* ]] && d=443; u=${u#*://}; u=${u%%/*}; [[ $u == *:* ]] && echo "${u##*:}" || echo $d; }
 box_gw() { $DOCKER network inspect -f '{{(index .IPAM.Config 0).Gateway}}' "$(bx "$1")"; }
 box_egress() { local f="$PROJ/.box/$1.egress"; [ -f "$f" ] && awk '!/^[[:space:]]*(#|$)/{print $1}' "$f"; return 0; }   # outside every mount: workers can't edit it
 box_fw() {   # <proj> [--count]: (re)load egress rules from a short-lived root helper with NET_ADMIN; the box itself has no caps
@@ -98,7 +98,7 @@ box_fw() {   # <proj> [--count]: (re)load egress rules from a short-lived root h
       bash -s -- "$BOX_UID" "$(box_gw "$p")" "$(nr_port)" "${EGRESS_DEFAULT[@]}" "${eg[@]}" < "$ROOT/box/fw.sh"
   fi
 }
-box_fwd() {   # <proj>: 127.0.0.1:<9router port> in the box -> 9router on the host; adapters keep NINEROUTER_URL=localhost (goose can't change it)
+box_fwd() {   # <proj>: 127.0.0.1:<9router port> in the box -> 9router on the host; adapters keep NINEROUTER_URL=127.0.0.1 (goose cannot change it; "localhost" can resolve through DNS when /etc/hosts lacks it)
   local n port; n=$(bx "$1"); port=$(nr_port)
   $DOCKER exec "$n" bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null && return 0
   $DOCKER exec -d "$n" socat "TCP-LISTEN:$port,bind=127.0.0.1,fork,reuseaddr" "TCP:$(box_gw "$1"):$port"

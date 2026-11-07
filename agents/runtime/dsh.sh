@@ -2,7 +2,7 @@
 # DSH_HOME stays the default (~/.dsh = the box home volume): sessions and profile live per project, never on the host.
 RT_ONESHOT=1   # `dsh --profile headless` runs one task and exits: assign always respawns
 DSH=${TEAM_DSH:-$ROOT/.runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js}
-NR=${NINEROUTER_URL:-http://localhost:20128/v1}
+NR=${NINEROUTER_URL:-http://127.0.0.1:20128/v1}
 rt_preflight() {
   [ "$browser" = none ] || die "dsh runtime: no browser support (use --runtime opencode for $role)"
   [ -n "${NINEROUTER_API_KEY:-}" ] || die "NINEROUTER_API_KEY not set in this shell"

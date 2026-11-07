@@ -1,7 +1,7 @@
 # opencode runtime (default). Base config: runtime-home/opencode.json (9router provider, permissions).
 # Per-pane config via OPENCODE_CONFIG_CONTENT: role prompt as instructions (+ Playwright MCP for browser roles, Task 5).
 OC=${TEAM_OPENCODE:-$ROOT/.runtime/opencode/node_modules/.bin/opencode}
-NR=${NINEROUTER_URL:-http://localhost:20128/v1}
+NR=${NINEROUTER_URL:-http://127.0.0.1:20128/v1}
 rt_preflight() {   # key check first: it is the most common failure and needs no install
   [ -n "${NINEROUTER_API_KEY:-}" ] || die "NINEROUTER_API_KEY not set in this shell"
   [ -x "$OC" ] || die "opencode not installed: run ./install.sh"

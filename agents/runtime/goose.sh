@@ -1,7 +1,7 @@
 # goose runtime (fallback). Config: runtime-home/goose (XDG_CONFIG_HOME). No browser support in MVP.
 RT_ONESHOT=1   # process exits after its task (.done lands just before exit): assign always respawns
 GO=${TEAM_GOOSE:-$ROOT/.runtime/goose/goose}
-NR=${NINEROUTER_URL:-http://localhost:20128/v1}
+NR=${NINEROUTER_URL:-http://127.0.0.1:20128/v1}
 rt_preflight() {
   [ "$browser" = none ] || die "goose runtime: no browser support (use --runtime opencode for $role)"
   [ -n "${NINEROUTER_API_KEY:-}" ] || die "NINEROUTER_API_KEY not set in this shell"
